@@ -5,14 +5,6 @@ description: Anti-hang rules for web_search-heavy tasks — session-wide search 
 
 # Search anti-hang rules
 
-Modified from Matt Pocock's `research` skill. See `docs/runbook.md` for the
-incident that motivated these rules.
-
-Sustained search volume trips IP-wide bot walls on the credential-free engines
-(Startpage empty, DuckDuckGo 403, Ecosia Cloudflare, Google challenge, Mojeek
-rate-limit). ~128 searches in ~20 minutes tripped all five; the walls clear
-only after quiet time.
-
 - **Cap searches session-wide:** ~15 `web_search` calls per session, not per
   agent — parallel agents share the wall and fresh sessions don't reset it.
   Past the cap, use `read` on known URLs.
