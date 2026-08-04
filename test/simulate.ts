@@ -1,10 +1,4 @@
-// test/simulate.ts — drives guard-core through the incident scenario.
-// Run: node test/simulate.ts   (Node >= 23.6 runs erasable TS natively)
-//
-// Cases covered: budget boundary, past-budget block, provider-failure
-// rewrite, non-search passthrough, agent-start injection, and the
-// per-scope vs shared budget question (validated live 2026-08-04 —
-// shared is the correct shape; see docs/runbook.md).
+// Drives guard-core through the incident scenario. Run: node test/simulate.ts
 
 import { Guard, SEARCH_BUDGET } from "../src/guard-core.ts";
 
