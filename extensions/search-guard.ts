@@ -1,4 +1,4 @@
-// omp extension wiring for the search-hang guard.
+// Extension wiring for the search-hang guard.
 // Load via the harness's extension loader; the type import is erased at runtime.
 // Parallel subagents share ctx.cwd, so the guard runs in "shared" mode —
 // verify ctx.sessionManager.getSessionFile() before switching to per-scope.

@@ -22,7 +22,7 @@ function search(guard: Guard, scope: string, n: number): void {
   console.log(`  web_search #${n} → ${r ? "BLOCKED" : "allowed"}${r ? `: ${r.reason}` : ""}`);
 }
 
-console.log("== Part 1: per-scope budget, single agent (runbook's per-agent cap) ==");
+console.log("== Part 1: per-scope budget, single agent (per-agent cap) ==");
 const g1 = new Guard("per-scope", SEARCH_BUDGET);
 
 const inject = g1.onAgentStart({}, { scope: A });
