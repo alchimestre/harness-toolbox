@@ -1,14 +1,7 @@
-// guard-core.ts — pure logic for the search-hang guard.
-// Zero runtime deps; erasable TS only (runs under `node test/simulate.ts`).
-// Event shapes mirror the subset of omp's tool_call / tool_result /
-// before_agent_start payloads the guard reads. The deployable extension
-// (extensions/search-guard.ts) is a thin wiring of these handlers onto the
-// real API.
-//
-// Validated 2026-08-04 by a live load test (see docs/runbook.md): sustained
-// search volume trips IP-wide bot walls on the credential-free engines, and
-// the wall does NOT reset per session. The budget MUST therefore be shared
-// (session-wide), not per-agent.
+// Pure logic for the search-hang guard. No deps; erasable TS.
+// Mirrors tool_call / tool_result / before_agent_start payloads.
+// The wall is IP-wide and does not reset per session, so the budget must be
+// shared (session-wide).
 
 export const SEARCH_BUDGET = 15; // calls allowed per scope before blocking
 
@@ -69,12 +62,8 @@ function freshState(): GuardState {
 }
 
 /**
- * per-scope: each agent/cwd has its own budget. Insufficient alone: parallel
- * agents with per-agent caps can collectively exceed the provider's volume
- * threshold (validated 2026-08-04).
- * shared:    one counter across all scopes in the process (session-wide cap) —
- *            the validated default; stops search volume before the engine
- *            bot-wall threshold is reached.
+ * per-scope: per-agent budget (parallel agents can collectively trip the wall).
+ * shared:    session-wide cap — the default.
  */
 export class Guard {
   readonly mode: ScopeMode;

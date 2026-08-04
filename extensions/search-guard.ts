@@ -1,25 +1,13 @@
-// search-guard.ts — omp extension wiring for the search-hang guard.
-//
-// Load via config.yml (no copy into ~/.agents needed):
-//   extensions:
-//     - ~/projects/search-guard/extensions/search-guard.ts
-//
-// The type import is erased at runtime, so this module loads without the
-// package installed.
-//
-// Scope resolution: subagent identity is not exposed directly on ctx today;
-// ctx.cwd is the conservative key, but parallel subagents share it — which is
-// exactly why "shared" mode exists (validated: the engine bot wall is IP-wide,
-// not per-agent). Verify whether ctx.sessionManager.getSessionFile() differs
-// per subagent before relying on per-scope mode.
+// omp extension wiring for the search-hang guard.
+// Load via the harness's extension loader; the type import is erased at runtime.
+// Parallel subagents share ctx.cwd, so the guard runs in "shared" mode —
+// verify ctx.sessionManager.getSessionFile() before switching to per-scope.
 
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { Guard, POLICY_CUSTOM_TYPE } from "../src/guard-core.ts";
 
 export default function searchHangGuard(pi: ExtensionAPI): void {
-  // "shared" caps the whole process/session at the budget — the validated
-  // shape; a per-agent cap lets parallel agents collectively cross the
-  // provider's volume threshold.
+  // Session-wide cap: per-agent caps let parallel agents trip the wall together.
   const guard = new Guard("shared");
 
   pi.on("before_agent_start", (event, ctx) =>
