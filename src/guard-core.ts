@@ -3,10 +3,10 @@
 // The wall is IP-wide and does not reset per session, so the budget must be
 // shared (session-wide).
 
-export const SEARCH_BUDGET = 15; // calls allowed per scope before blocking
+export const SEARCH_BUDGET = 15; // calls allowed per counted budget
 
 export const BUDGET_REASON =
-  `web_search budget (${SEARCH_BUDGET}) exhausted for this scope. ` +
+  `web_search budget (${SEARCH_BUDGET}) exhausted for this session. ` +
   `Stop searching. Read the known URLs directly; mark anything unverified as [INFERENCE].`;
 
 export const RETRY_BAN_SUFFIX =
@@ -17,7 +17,7 @@ export const RETRY_BAN_SUFFIX =
 export const POLICY_CUSTOM_TYPE = "search-hang-policy";
 export const POLICY_MESSAGE =
   `Search anti-hang policy for this agent turn:\n` +
-  `1. Budget: at most ${SEARCH_BUDGET} web_search calls per scope. Past that, calls are ` +
+  `1. Budget: at most ${SEARCH_BUDGET} web_search calls per session. Past that, calls are ` +
   `blocked — use read on known URLs instead.\n` +
   `2. A web_search returning an error or staying "pending" is a dead end: do NOT retry it. ` +
   `Read the target URLs directly.\n` +
