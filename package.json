@@ -1,0 +1,8 @@
+{
+  "name": "harness-toolbox",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test/simulate.ts && bun test/wiring.ts"
+  }
+}

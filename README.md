@@ -1,25 +1,48 @@
-# search-guard
+# harness-toolbox
 
-Prevents `web_search` hangs under parallel research load: session-wide search
-budget, no-retry policy, read-fallback.
+Extensions, rules, and a skill for the `omp` coding harness. Each tool is independent; load only what you need.
 
-## Files
+## Tools
 
-- `skills/search-hang/SKILL.md` — skill for research agents (modified from Matt Pocock's `research` skill)
-- `extensions/search-guard.ts` — event extension: budget cap, no-retry rewrite, policy injection
-- `src/guard-core.ts` — pure logic, no deps
-- `test/simulate.ts` — scenario harness (`node test/simulate.ts`)
+| Tool | Kind | File | What it does |
+|---|---|---|---|
+| search-guard | extension | `extensions/search-guard.ts` | Caps `web_search` at 15 calls, rewrites provider errors to forbid retries, injects the policy at agent start. Logic in `src/guard-core.ts`. |
+| long-horizon-watchdog | extension | `extensions/long-horizon-watchdog.ts` | Ticks every 5 minutes while a background job or subagent runs past 10 minutes, backing off to 30. Main sessions only. |
+| search-hang | skill | `skills/search-hang/SKILL.md` | The anti-hang policy for agents that read skills. |
+| long-horizon-watchdog | rule | `rules/long-horizon-watchdog.md` | What to do on each tick: read `proc://`, `agent://<id>`, `history://<id>`, classify, then act. |
 
 ## Install
 
-Point your harness at the repo.
+1. Add the extensions and skill directory to `~/.omp/agent/config.yml`:
 
-- **Skill:** add `<repo>/skills` to your harness's custom skills directories, or symlink `skills/search-hang` into `~/.agents/skills/`.
-- **Extension:** load `<repo>/extensions/search-guard.ts` through your harness's extension loader.
-- **Search timeout:** a ~30s per-provider ceiling is recommended where configurable.
+```yaml
+extensions:
+  - /path/to/harness-toolbox/extensions/search-guard.ts
+  - /path/to/harness-toolbox/extensions/long-horizon-watchdog.ts
+skills:
+  customDirectories:
+    - /path/to/harness-toolbox/skills
+```
+
+2. Link the rule:
+
+```sh
+ln -s /path/to/harness-toolbox/rules/long-horizon-watchdog.md ~/.omp/agent/rules/long-horizon-watchdog.md
+```
+
+3. Restart the harness.
+
+Set `providers.webSearchTimeoutSeconds: 30`. Under parallel load the search provider chain grinds for a minute per failed call.
 
 ## Behavior
 
-- Blocks `web_search` past the budget (default 15, session-wide).
-- Rewrites provider-failure results to forbid retries.
-- Injects the rules at agent start, so subagents get them without reading the skill.
+- **search-guard** counts calls process-wide, so parallel subagents share one budget. The 16th call is blocked with a read-the-URLs reason. A result starting `Error:` gets a no-retry suffix appended.
+- **long-horizon-watchdog** reads the async job snapshot on a timer and sends one message listing jobs past the age floor. The delay doubles while jobs remain, up to 30 minutes, and resets when none do.
+
+## Tests
+
+```sh
+bun run test
+```
+
+`test/simulate.ts` drives the guard through the load scenario. `test/wiring.ts` checks both extensions against a fake harness API.
