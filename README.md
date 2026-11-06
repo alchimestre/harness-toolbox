@@ -1,6 +1,6 @@
 # harness-toolbox
 
-Extensions, rules, and a skill for the `omp` coding harness. Each tool is independent; load only what you need.
+Extensions, rules, and skills for the `omp` coding harness. Each tool is independent; load only what you need.
 
 ## Tools
 
@@ -9,6 +9,9 @@ Extensions, rules, and a skill for the `omp` coding harness. Each tool is indepe
 | search-guard | extension | `extensions/search-guard.ts` | Caps `web_search` at 15 calls, rewrites provider errors to forbid retries, injects the policy at agent start. Logic in `src/guard-core.ts`. |
 | long-horizon-watchdog | extension | `extensions/long-horizon-watchdog.ts` | Ticks every 5 minutes while a background job or subagent runs past 10 minutes, backing off to 30. Main sessions only. |
 | search-hang | skill | `skills/search-hang/SKILL.md` | The anti-hang policy for agents that read skills. |
+| ponytail-compatibility | skill | `skills/ponytail-compatibility/SKILL.md` | Makes applicable workflows and agent roles take precedence over conflicting Ponytail instructions of equal authority. |
+| code | rule | `rules/code.md` | Personal comment, readability, dependency, and repository portability constraints. |
+| writing | rule | `rules/writing.md` | Reader-facing document formats and ticket limits. |
 | long-horizon-watchdog | rule | `rules/long-horizon-watchdog.md` | What to do on each tick: read `proc://`, `agent://<id>`, `history://<id>`, classify, then act. |
 
 ## Install
@@ -24,13 +27,21 @@ skills:
     - /path/to/harness-toolbox/skills
 ```
 
-2. Link the rule:
+2. Link the watchdog rule:
 
 ```sh
 ln -s /path/to/harness-toolbox/rules/long-horizon-watchdog.md ~/.omp/agent/rules/long-horizon-watchdog.md
 ```
 
-3. Restart the harness.
+3. Link the compatibility skill as a startup rule:
+
+```sh
+ln -s /path/to/harness-toolbox/skills/ponytail-compatibility/SKILL.md ~/.omp/agent/rules/ponytail-compatibility.md
+ln -s /path/to/harness-toolbox/rules/code.md ~/.omp/agent/rules/code.md
+ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
+```
+
+4. Restart the harness.
 
 Set `providers.webSearchTimeoutSeconds: 30`. Under parallel load the search provider chain grinds for a minute per failed call.
 
