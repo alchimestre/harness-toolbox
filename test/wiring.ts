@@ -163,11 +163,16 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	handlers["session_start"]({}, harness("openai-codex/gpt-6.2-sol"));
 	check(overrides.at(-1)?.advisor === "anthropic/claude-sonnet-5-5:high", "openai primary skips opus whose chain returns to openai");
 
+	// Same-family advisor, so a main session would override: the kind guard is what suppresses the calls below.
+	configured = { advisor: "anthropic/claude-opus-5-5:high" };
 	const applied = overrides.length;
 	handlers["session_start"]({}, harness("anthropic/claude-opus-5-5", "sub"));
 	check(overrides.length === applied, "subagent session start leaves the advisor alone");
 	handlers["retry_fallback_applied"]({}, harness("anthropic/claude-opus-5-5", "sub"));
 	check(overrides.length === applied, "subagent fallback leaves the advisor alone");
+
+	handlers["retry_fallback_applied"]({}, harness("anthropic/claude-opus-5-5"));
+	check(overrides.at(-1)?.advisor === "openai-codex/gpt-6.2-sol:high", "main-session fallback applies the override");
 }
 
 console.log("\nall wiring checks passed");
