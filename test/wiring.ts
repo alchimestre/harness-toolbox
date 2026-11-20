@@ -1,4 +1,4 @@
-// Wires both extensions against a fake harness API. Run: bun test/wiring.ts
+// Wires each extension against a fake harness API. Run: bun test/wiring.ts
 
 import { mock } from "bun:test";
 
@@ -164,6 +164,8 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	check(overrides.at(-1)?.advisor === "anthropic/claude-sonnet-5-5:high", "openai primary skips opus whose chain returns to openai");
 
 	const applied = overrides.length;
+	handlers["session_start"]({}, harness("anthropic/claude-opus-5-5", "sub"));
+	check(overrides.length === applied, "subagent session start leaves the advisor alone");
 	handlers["retry_fallback_applied"]({}, harness("anthropic/claude-opus-5-5", "sub"));
 	check(overrides.length === applied, "subagent fallback leaves the advisor alone");
 }
