@@ -3,7 +3,6 @@
 import { mock } from "bun:test";
 
 import searchGuard from "../extensions/search-guard.ts";
-import watchdog from "../extensions/long-horizon-watchdog.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -72,43 +71,6 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	};
 	check(injected.message.customType === "search-hang-policy", "policy injected at agent start");
 	check(messages.length === 0, "search-guard sends no user-visible messages");
-}
-
-// --- long-horizon-watchdog -------------------------------------------------
-{
-	const { pi, handlers, messages } = fakePi();
-	watchdog(pi as never);
-
-	check("session_start" in handlers, "watchdog registers session_start");
-
-	const timers: Array<{ fn: () => void; ms: number }> = [];
-	const timerCtx = {
-		agent: { kind: "main" },
-		setTimeout: (fn: () => void, ms: number) => timers.push({ fn, ms }),
-		getAsyncJobSnapshot: () => ({
-			running: [
-				{ id: "bg_1", type: "bash", status: "running", startTime: Date.now() - 700_000, label: "long job" },
-				{ id: "bg_2", type: "bash", status: "running", startTime: Date.now() - 1_000, label: "young job" },
-			],
-		}),
-	};
-
-	handlers["session_start"]({}, timerCtx);
-	check(timers.length === 1 && timers[0].ms === 300_000, "first tick armed at 5m");
-
-	timers[0].fn();
-	check(messages.length === 1, "one tick message sent");
-	const tick = messages[0] as { customType: string; content: string };
-	check(tick.customType === "omp.watchdog.tick", "tick customType");
-	check(tick.content.includes("bg_1") && !tick.content.includes("bg_2"), "only jobs past the age floor listed");
-	check(timers.length === 2 && timers[1].ms === 600_000, "delay doubles while jobs remain");
-
-	const sub = fakePi();
-	watchdog(sub.pi as never);
-	sub.handlers["session_start"]({}, { ...timerCtx, agent: { kind: "sub" }, setTimeout: () => {
-		throw new Error("subagent must not arm a timer");
-	} });
-	console.log("ok subagent session arms no timer");
 }
 
 // --- advisor-cross-family --------------------------------------------------

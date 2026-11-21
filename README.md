@@ -7,13 +7,11 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | Tool | Kind | File | What it does |
 |---|---|---|---|
 | search-guard | extension | `extensions/search-guard.ts` | Caps `web_search` at 15 calls, rewrites provider errors to forbid retries, injects the policy at agent start. Logic in `src/guard-core.ts`. |
-| long-horizon-watchdog | extension | `extensions/long-horizon-watchdog.ts` | Ticks every 5 minutes while a background job or subagent runs past 10 minutes, backing off to 30. Main sessions only. |
 | advisor-cross-family | extension | `extensions/advisor-cross-family.ts` | Moves the advisor role to another model family when the session's live model changes provider. Checks the configured role, not the model a fallback chain lands on. |
 | search-hang | skill | `skills/search-hang/SKILL.md` | The anti-hang policy for agents that read skills. |
 | ponytail-compatibility | skill | `skills/ponytail-compatibility/SKILL.md` | Makes applicable workflows and agent roles take precedence over conflicting Ponytail instructions of equal authority. |
 | code | rule | `rules/code.md` | Personal comment, readability, dependency, and repository portability constraints. |
 | writing | rule | `rules/writing.md` | Reader-facing document formats and ticket limits. |
-| long-horizon-watchdog | rule | `rules/long-horizon-watchdog.md` | What to do on each tick: read `proc://`, `agent://<id>`, `history://<id>`, classify, then act. |
 
 ## Install
 
@@ -22,20 +20,13 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 ```yaml
 extensions:
   - /path/to/harness-toolbox/extensions/search-guard.ts
-  - /path/to/harness-toolbox/extensions/long-horizon-watchdog.ts
   - /path/to/harness-toolbox/extensions/advisor-cross-family.ts
 skills:
   customDirectories:
     - /path/to/harness-toolbox/skills
 ```
 
-2. Link the watchdog rule:
-
-```sh
-ln -s /path/to/harness-toolbox/rules/long-horizon-watchdog.md ~/.omp/agent/rules/long-horizon-watchdog.md
-```
-
-3. Link the compatibility skill as a startup rule:
+2. Link the rules and the compatibility skill as startup rules:
 
 ```sh
 ln -s /path/to/harness-toolbox/skills/ponytail-compatibility/SKILL.md ~/.omp/agent/rules/ponytail-compatibility.md
@@ -43,14 +34,13 @@ ln -s /path/to/harness-toolbox/rules/code.md ~/.omp/agent/rules/code.md
 ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
 ```
 
-4. Restart the harness.
+3. Restart the harness.
 
 Set `providers.webSearchTimeoutSeconds: 30`. Under parallel load the search provider chain grinds for a minute per failed call.
 
 ## Behavior
 
 - **search-guard** counts calls process-wide, so parallel subagents share one budget. The 16th call is blocked with a read-the-URLs reason. A result starting `Error:` gets a no-retry suffix appended.
-- **long-horizon-watchdog** reads the async job snapshot on a timer and sends one message listing jobs past the age floor. The delay doubles while jobs remain, up to 30 minutes, and resets when none do.
 - **advisor-cross-family** runs at session start and on `retry_fallback_applied`, comparing the live model's family with the configured advisor's and overriding `modelRoles.advisor` to the first preference of another family. Subagent sessions are skipped. Limits: it reads the configured role, so a review that a fallback chain lands in the primary's family goes unfixed; keep primary-family models out of the advisor's chain by hand. The anthropic preference is `claude-sonnet-5-5` because Opus's chain returns to `gpt-6.2-sol`, which is the primary family in the case that entry serves. The openai-primary path has not been exercised end to end.
 
 ## Tests
