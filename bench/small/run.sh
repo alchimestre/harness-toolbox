@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# usage: run.sh <tools|commit|scout|task|explore> <provider/model:level> <rep>
+# usage: run.sh <tools|commit|scout|task|explore> <provider/model:level> <rep> [variant]
+# A variant replaces the prompt with variants/<kind>/<variant>.txt; same fixture and checks.
 set -u
-kind=$1 model=$2 rep=$3
+kind=$1 model=$2 rep=$3 variant=${4:-}
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
-mkdir -p runs
+mkdir -p runs/variants
 [ -f scout.md ] || { unpacked=$(mktemp -d); omp agents unpack --dir "$unpacked" >/dev/null && cp "$unpacked/scout.md" .; rm -r "$unpacked"; }
 tag="${kind}__${model//\//_}__${rep}"
+[ -n "$variant" ] && tag="variants/${kind}-${variant}__${model//\//_}__${rep}"
 dir=$(mktemp -d); cp ../overlay.yml "$dir/"
 if [ "$kind" = tools ]; then
   cp -R fixture/. "$dir/"
@@ -27,6 +29,7 @@ else
 
 $(cat commit.diff)"
 fi
+[ -n "$variant" ] && prompt=$(cat "variants/$kind/$variant.txt")
 start=$(date +%s)
 rm -f "runs/$tag.decoy" "runs/$tag.result" "runs/$tag.parts"
 (cd "$dir" && timeout 300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files \
