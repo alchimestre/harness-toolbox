@@ -1,0 +1,1 @@
+Follow the instructions in SCOUT.md. Find every function in the codebase that collapses repeated dashes, starting with the one slugify uses. Name each function and answer with file:line for each.

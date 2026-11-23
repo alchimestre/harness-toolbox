@@ -1,0 +1,1 @@
+Follow the instructions in SCOUT.md. slugify in lib/text.js calls one helper to collapse repeated dashes. Give that helper's name and file:line, and the name and file:line of the other function in the codebase that does the same job.

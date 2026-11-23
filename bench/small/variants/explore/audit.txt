@@ -1,0 +1,1 @@
+Audit every place in src/ that turns a decimal money string into integer cents and make each one comply with SPEC.md; the same conversion was written several different ways. node test.js covers one of them. Fix the source (not the test) and run node test.js until it prints ok. Reply with one line per file you changed.

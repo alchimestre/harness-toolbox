@@ -1,0 +1,1 @@
+Follow the instructions in SCOUT.md. Quick answer needed, keep it short: which function does slugify use to collapse repeated dashes, where is it defined, and which other file defines a function that does the same job? Answer with file:line for each.
