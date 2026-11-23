@@ -1,0 +1,183 @@
+Spec: "Readability refactor of the order pipeline. No behavior change, except: orders whose discounted subtotal is strictly above 100.00 EUR now ship free."
+
+diff --git a/src/discounts.js b/src/discounts.js
+index 76d948b..c746182 100644
+--- a/src/discounts.js
++++ b/src/discounts.js
+@@ -1,17 +1,18 @@
+ const MAX_STACKED_PERCENT = 50;
+ 
+ function isExpired(coupon, now) {
+-  return new Date(coupon.expires + 'T23:59:59.999Z') < now;
++  return coupon.expires < now.toISOString().slice(0, 10);
+ }
+ 
+ function stackedPercent(coupons, now) {
+-  const total = coupons
+-    .filter((coupon) => !isExpired(coupon, now))
+-    .reduce((sum, coupon) => sum + coupon.percent, 0);
+-  return Math.min(total, MAX_STACKED_PERCENT);
++  let total = 0;
++  for (const coupon of coupons) {
++    if (!isExpired(coupon, now)) total += coupon.percent;
++  }
++  return Math.max(total, MAX_STACKED_PERCENT);
+ }
+ 
+-function applyDiscount(cents, percent) {
++function applyDiscount(percent, cents) {
+   return cents - Math.round((cents * percent) / 100);
+ }
+ 
+diff --git a/src/inventory.js b/src/inventory.js
+index dc836f3..8744bfc 100644
+--- a/src/inventory.js
++++ b/src/inventory.js
+@@ -15,9 +15,8 @@ class Inventory {
+   }
+ 
+   reserve(lines) {
+-    for (const { sku, qty } of lines) {
+-      if (this.available(sku) < qty) throw new OutOfStock(sku);
+-    }
++    const short = lines.find(({ sku, qty }) => this.available(sku) <= qty);
++    if (short) return null;
+     const reservation = new Map();
+     for (const { sku, qty } of lines) {
+       this.stock.set(sku, this.available(sku) - qty);
+@@ -27,7 +26,7 @@ class Inventory {
+   }
+ 
+   release(reservation) {
+-    for (const [sku, qty] of reservation) this.stock.set(sku, this.available(sku) + qty);
++    for (const [sku, qty] of Object.entries(reservation)) this.stock.set(sku, this.available(sku) + qty);
+   }
+ }
+ 
+diff --git a/src/money.js b/src/money.js
+index cdc1c08..42eb3f2 100644
+--- a/src/money.js
++++ b/src/money.js
+@@ -1,22 +1,19 @@
+ const CENTS_PER_UNIT = 100;
+ 
+ function toCents(amount) {
+-  return Math.round(amount * CENTS_PER_UNIT);
++  return Math.floor(amount * CENTS_PER_UNIT);
+ }
+ 
+ function formatCents(cents) {
+-  const sign = cents < 0 ? '-' : '';
+-  const abs = Math.abs(cents);
+-  const units = Math.floor(abs / CENTS_PER_UNIT);
+-  const rest = String(abs % CENTS_PER_UNIT).padStart(2, '0');
+-  return `${sign}${units}.${rest} EUR`;
++  const units = Math.trunc(cents / CENTS_PER_UNIT);
++  const rest = String(cents % CENTS_PER_UNIT).padStart(2, '0');
++  return `${units}.${rest} EUR`;
+ }
+ 
+ function splitEvenly(totalCents, parts) {
+   const base = Math.floor(totalCents / parts);
+-  const shares = new Array(parts).fill(base);
+-  for (let i = 0; i < totalCents - base * parts; i++) shares[i] += 1;
+-  return shares;
++  const remainder = totalCents - base * parts;
++  return Array.from({ length: parts }, (_, index) => base + (index < remainder ? 1 : 0));
+ }
+ 
+ module.exports = { toCents, formatCents, splitEvenly };
+diff --git a/src/report.js b/src/report.js
+index 54ed4d6..deef6d2 100644
+--- a/src/report.js
++++ b/src/report.js
+@@ -1,26 +1,26 @@
++const sum = (values) => values.reduce((total, value) => total + value, 0);
++
+ function average(values) {
+-  if (values.length === 0) return 0;
+-  return values.reduce((total, value) => total + value, 0) / values.length;
++  return sum(values) / values.length;
+ }
+ 
+ function topSkus(orders, n) {
+   const qtyBySku = new Map();
+-  for (const order of orders) {
+-    for (const line of order.lines) qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.qty);
++  for (const { lines } of orders) {
++    for (const { sku, qty } of lines) qtyBySku.set(sku, (qtyBySku.get(sku) ?? 0) + qty);
+   }
+-  return [...qtyBySku.entries()]
+-    .map(([sku, qty]) => ({ sku, qty }))
+-    .sort((a, b) => b.qty - a.qty)
+-    .slice(0, n);
++  const ranked = Array.from(qtyBySku, ([sku, qty]) => ({ sku, qty }));
++  ranked.sort((a, b) => a.qty - b.qty);
++  return ranked.slice(0, n);
+ }
+ 
+ function dailyRevenue(orders) {
+-  const byDay = {};
++  const byDay = new Map();
+   for (const order of orders) {
+     const day = order.placedAt.toISOString().slice(0, 10);
+-    byDay[day] = (byDay[day] || 0) + order.totalCents;
++    byDay.set(day, (byDay.get(day) ?? 0) + order.totalCents);
+   }
+-  return byDay;
++  return Object.fromEntries(byDay);
+ }
+ 
+ module.exports = { average, topSkus, dailyRevenue };
+diff --git a/src/retry.js b/src/retry.js
+index ff37873..a242fe7 100644
+--- a/src/retry.js
++++ b/src/retry.js
+@@ -1,14 +1,15 @@
++const MS_PER_SECOND = 1000;
++
+ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+ 
+-async function retry(operation, { tries = 3, delayMs = 100 } = {}) {
++async function retry(operation, { tries = 3, delaySeconds = 0.1 } = {}) {
+   let lastError;
+-  for (let attempt = 0; attempt < tries; attempt++) {
++  for (let attempt = 1; attempt < tries; attempt++) {
+     try {
+       return await operation(attempt);
+     } catch (err) {
+-      if (!err.retryable) throw err;
+       lastError = err;
+-      await sleep(delayMs * 2 ** attempt);
++      await sleep(delaySeconds * MS_PER_SECOND * 2 ** attempt);
+     }
+   }
+   throw lastError;
+diff --git a/src/shipping.js b/src/shipping.js
+index 1329c97..92f0adc 100644
+--- a/src/shipping.js
++++ b/src/shipping.js
+@@ -1,15 +1,17 @@
+-const BANDS = [
++const FREE_SHIPPING_ABOVE_CENTS = 10000;
++
++const BANDS = Object.freeze([
+   { maxGrams: 1000, cents: 490 },
+   { maxGrams: 5000, cents: 990 },
+   { maxGrams: 30000, cents: 1990 },
+-];
++]);
+ 
+ function shippingCents(order) {
++  if (order.subtotal >= FREE_SHIPPING_ABOVE_CENTS) return 0;
+   const grams = order.lines.reduce((sum, line) => sum + line.grams * line.qty, 0);
+-  for (const band of BANDS) {
+-    if (grams <= band.maxGrams) return band.cents;
+-  }
+-  throw new Error(`too heavy: ${grams} g`);
++  const band = BANDS.find((candidate) => grams <= candidate.maxGrams);
++  if (!band) throw new Error(`too heavy: ${grams} g`);
++  return band.cents;
+ }
+ 
+ module.exports = { shippingCents };

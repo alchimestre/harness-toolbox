@@ -42,11 +42,38 @@ DEFECTS = {
         "ring shift keeps count": "Ring.shift no longer decrements count, so the ring's size and later pushes are wrong after a shift.",
         "negative weekday index": "shiftWeekday dropped the + 7 normalization, so negative offsets index the array with a negative number and return undefined.",
     },
+    "ledger": {
+        "toCents truncates": "toCents uses Math.floor, so float prices like 19.99 become 1998 cents instead of 1999.",
+        "formatCents negative": "formatCents mangles negative amounts: -50 cents becomes '0.-50 EUR' (sign lost, minus inside the cents).",
+        "discount arguments swapped": "applyDiscount's parameters were swapped to (percent, cents) but orders.js still calls applyDiscount(subtotalCents, percent), producing wrong (even negative) totals.",
+        "stack cap uses max": "stackedPercent uses Math.max instead of Math.min, so every order gets at least a 50% discount.",
+        "reserve refuses last unit": "reserve's check is available <= qty, so ordering exactly the remaining stock is refused.",
+        "reserve returns null": "reserve now returns null instead of throwing OutOfStock, and orders.js only catches the exception, so out-of-stock orders proceed and get charged.",
+        "release no-op on Map": "release iterates Object.entries(reservation), but the reservation is a Map, so nothing is released after a failed payment.",
+        "free shipping at exactly 100": "Free shipping uses >= 10000, but the spec says strictly above 100.00 EUR.",
+        "free shipping field mismatch": "shippingCents reads order.subtotal, but orders.js passes discountedCents, so the free-shipping branch never fires.",
+        "retry skips an attempt": "retry's loop starts at attempt = 1, so it makes one fewer try (and tries: 1 makes no call and throws undefined).",
+        "retry option renamed": "retry's delayMs option became delaySeconds, but payments.js still passes delayMs: 2000, which is ignored, so the provider backoff drops to the 0.1 s default.",
+        "non-retryable retried": "retry no longer rethrows non-retryable errors, so failures such as declined charges are retried.",
+        "topSkus ascending": "topSkus now sorts ascending, returning the least sold SKUs instead of the top ones.",
+        "average of empty is NaN": "average dropped the empty-array guard, so it returns NaN instead of 0.",
+    },
+}
+
+# Changes that look suspicious but preserve behavior; the judge sees them unlabeled among the defects.
+DECOYS = {
+    "ledger": {
+        "decoy isExpired": "isExpired's switch to comparing coupon.expires with today's ISO date string changes which coupons count as expired.",
+        "decoy splitEvenly": "splitEvenly's rewrite changes the shares it returns or how the remainder is distributed.",
+        "decoy shipping bands": "The shipping band lookup (Object.freeze, BANDS.find) changes the fee for some weight or the too-heavy error.",
+        "decoy dailyRevenue": "dailyRevenue's switch to a Map, ?? 0 and Object.fromEntries changes its result.",
+    },
 }
 
 
 def main():
-    echo_scores = judge_all([(f"{case}.diff", case, open(f"{case}.diff").read()) for case in DEFECTS], cache=False)
+    echo_reviews = [(f"{case}.diff", case, "Looks good to me.\n\n" + open(f"{case}.diff").read()) for case in DEFECTS]
+    echo_scores = judge_all(echo_reviews, cache=False)
     leaks = {key: found for key, found in echo_scores.items() if found}
     assert not leaks, f"judge credits a review that only pastes the diff back: {leaks}"
 
@@ -69,18 +96,20 @@ def judged(key, case, review, cache):
     cache_path = key[:-6] + ".judged.json"
     if cache and os.path.exists(cache_path):
         return json.load(open(cache_path))
-    names = list(DEFECTS[case])
-    numbered = "\n".join(f"{index + 1}. {DEFECTS[case][name]}" for index, name in enumerate(names))
+    claims = {**DEFECTS[case], **DECOYS.get(case, {})}
+    names = list(claims)
+    numbered = "\n".join(f"{index + 1}. {claims[name]}" for index, name in enumerate(names))
     prompt = (
         "Below are numbered defects in a code change, then a code review of that change. For each defect, decide "
-        "whether the review identifies that specific defect: it must state the faulty behavior, not merely quote the "
-        "code or mention the file. Reply with only a JSON object mapping each defect number to true or false.\n\n"
+        "whether the reviewer identifies that specific defect in their own words: they must state the faulty behavior. "
+        "Quoted code, diffs, or file names never count, even when the defect is visible in them; do not find defects "
+        "yourself. Reply with only a JSON object mapping each defect number to true or false.\n\n"
         f"Defects:\n{numbered}\n\nReview:\n<review>\n{review}\n</review>"
     )
     command = ["omp", "-p", "--no-session", "--no-skills", "--no-extensions", "--no-context-files", "--no-tools",
                "--model", JUDGE_MODEL, prompt]
     output = subprocess.run(command, capture_output=True, text=True, timeout=180, check=True).stdout
-    answers = json.loads(output[output.index("{"):output.rindex("}") + 1])
+    answers, _end = json.JSONDecoder().raw_decode(output[output.index("{"):])
     found = [name for index, name in enumerate(names) if answers.get(str(index + 1)) is True]
     if cache:
         json.dump(found, open(cache_path, "w"))
@@ -97,16 +126,21 @@ def print_table(paths, verdicts):
         expected = model.replace("_", "/", 1).split(":")[0]
         assert responders == {expected}, f"{path}: answered by {responders}"
         secs = int(open(path[:-6] + ".secs").read())
-        recall = len(verdicts.get(path, [])) / len(DEFECTS[case])
-        rows[f"{agent} {model.replace('anthropic_', '')}"][case].append((recall, cost, output, secs))
-    print("| agent model:effort | " + " | ".join(f"{case} recall" for case in DEFECTS) + " | $ per review | output tok | secs |")
-    print("|---|" + "---|" * (len(DEFECTS) + 3))
+        found = verdicts.get(path, [])
+        recall = sum(name in DEFECTS[case] for name in found) / len(DEFECTS[case])
+        flagged = sum(name in DECOYS.get(case, {}) for name in found)
+        rows[f"{agent} {model.replace('anthropic_', '')}"][case].append((recall, cost, output, secs, flagged))
+    print("| agent model:effort | " + " | ".join(f"{case} recall" for case in DEFECTS)
+          + " | decoys flagged per review | $ per review | output tok | secs |")
+    print("|---|" + "---|" * (len(DEFECTS) + 4))
     for model in sorted(rows):
         cases = rows[model]
         runs = [run for case_runs in cases.values() for run in case_runs]
         recall = [f"{statistics.mean(run[0] for run in cases[case]):.0%}" if case in cases else "-" for case in DEFECTS]
+        decoy_runs = [run for case in DECOYS if case in cases for run in cases[case]]
+        flagged = f"{statistics.mean(run[4] for run in decoy_runs):.2f}" if decoy_runs else "-"
         print(
-            f"| {model} | " + " | ".join(recall) + " "
+            f"| {model} | " + " | ".join(recall) + f" | {flagged} "
             f"| {statistics.mean(run[1] for run in runs):.4f} | {statistics.mean(run[2] for run in runs):.0f} "
             f"| {statistics.mean(run[3] for run in runs):.0f} |"
         )
