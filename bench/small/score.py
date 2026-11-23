@@ -33,7 +33,7 @@ def read_run(path):
 
 
 def passed(kind, tag, answer):
-    if kind in ("tools", "task"):
+    if kind in ("tools", "task", "explore"):
         return open(f"runs/{tag}.result").read().strip() == "pass"
     if kind == "scout":
         return all(re.search(p, answer) for p in (r"lib/util\.js:\d", r"\bcollapse\b", r"lib/legacy/strings\.js:\d", r"\bsqueeze\b"))
@@ -68,21 +68,29 @@ def main():
             f"| {sum(r[0] for r in commit)}/{len(commit)} | {sum(r[0] for r in scout)}/{len(scout)} | {statistics.mean(r[1] for r in runs):.4f} "
             f"| {statistics.mean(r[4] for r in runs):.0f} |"
         )
-    print_task_table(rows)
+    print_task_table(rows, "task")
+    print_task_table(rows, "explore")
 
 
-def print_task_table(rows):
-    print("\n| model:effort | task pass | decoy edited | tool calls | $ per task | secs |")
-    print("|---|---|---|---|---|---|")
+def checks_passed(tag):
+    passed, total = open(f"runs/{tag}.parts").read().split("/")
+    return int(passed) / int(total)
+
+
+def print_task_table(rows, kind):
+    print(f"\n| model:effort | {kind} pass | hidden checks | decoy edited | tool calls | $ per run | secs |")
+    print("|---|---|---|---|---|---|---|")
     for model, kinds in sorted(rows.items(), key=lambda item: item[0]):
-        task = kinds.get("task", [])
-        if not task:
+        runs = kinds.get(kind, [])
+        if not runs:
             continue
-        decoys = len(glob.glob(f"runs/task__{glob.escape(model)}__*.decoy"))
+        tags = [path[5:-5] for path in glob.glob(f"runs/{kind}__{glob.escape(model)}__*.secs")]
+        checks = f"{statistics.mean(checks_passed(tag) for tag in tags):.0%}" if kind == "explore" else "-"
+        decoys = len(glob.glob(f"runs/{kind}__{glob.escape(model)}__*.decoy"))
         print(
-            f"| {model.replace('anthropic_', '')} | {sum(r[0] for r in task)}/{len(task)} | {decoys}/{len(task)} "
-            f"| {statistics.mean(r[2] for r in task):.1f} | {statistics.mean(r[1] for r in task):.4f} "
-            f"| {statistics.mean(r[4] for r in task):.0f} |"
+            f"| {model.replace('anthropic_', '')} | {sum(r[0] for r in runs)}/{len(runs)} | {checks} | {decoys}/{len(runs)} "
+            f"| {statistics.mean(r[2] for r in runs):.1f} | {statistics.mean(r[1] for r in runs):.4f} "
+            f"| {statistics.mean(r[4] for r in runs):.0f} |"
         )
 
 
