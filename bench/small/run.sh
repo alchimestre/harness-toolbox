@@ -27,6 +27,7 @@ else
 $(cat commit.diff)"
 fi
 start=$(date +%s)
+rm -f "runs/$tag.decoy" "runs/$tag.result"
 (cd "$dir" && timeout 300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files \
   --config overlay.yml --tools "$tools" --model "$model" "$prompt") > "runs/$tag.jsonl" 2> "runs/$tag.err"
 echo "$(( $(date +%s) - start ))" > "runs/$tag.secs"
