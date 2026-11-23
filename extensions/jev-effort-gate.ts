@@ -57,8 +57,12 @@ export default function jevEffortGate(pi: ExtensionAPI): void {
 		if (Date.now() - quotaFetchedAt < QUOTA_TTL_MS) return;
 		quotaFetchedAt = Date.now();
 		const args = ["usage", "--json", "--redact", "--no-extensions"];
-		const result = await pi.exec("omp", args, { timeout: QUOTA_COMMAND_TIMEOUT_MS });
-		if (result.code === 0) quota = quotaUsedByProvider(result.stdout);
+		try {
+			const result = await pi.exec("omp", args, { timeout: QUOTA_COMMAND_TIMEOUT_MS });
+			if (result.code === 0) quota = quotaUsedByProvider(result.stdout);
+		} catch {
+			// Stale quota is kept; chooseLevel reports "quota unknown" until a fetch succeeds.
+		}
 	};
 
 	pi.on("session_start", () => {
@@ -76,19 +80,20 @@ export default function jevEffortGate(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_subagent_spawn", async (event: SpawnEvent) => {
+		const assignment = event.spawnKey ? pending.get(event.spawnKey) : undefined;
+		if (event.spawnKey) pending.delete(event.spawnKey);
 		const range = AGENT_RANGE[event.agent];
 		const [primary, ...fallbacks] = event.patterns ?? [];
 		const match = primary?.match(/^(.+):(low|medium|high)$/);
 		if (!range || !match) return undefined;
 		const [, model, configured] = match as unknown as [string, string, Level];
 
-		const assignment = event.spawnKey ? pending.get(event.spawnKey) : undefined;
-		if (event.spawnKey) pending.delete(event.spawnKey);
 		void refreshQuota();
-		const signals = assignment?.agent === event.agent ? await askJev(event.agent, assignment.text) : undefined;
+		const jev = assignment?.agent === event.agent ? await askJev(event.agent, assignment.text) : { error: "no assignment text" };
 		const used = quota.get(model.split("/")[0]);
-		const decision = chooseLevel(configured, range, signals, used);
-		return { model: [`${model}:${decision.level}`, ...fallbacks], note: decision.reason };
+		const decision = chooseLevel(configured, range, jev.signals, used);
+		const note = jev.error ? `${decision.reason}; Jev: ${jev.error}` : decision.reason;
+		return { model: [`${model}:${decision.level}`, ...fallbacks], note };
 	});
 }
 
@@ -117,9 +122,9 @@ export function chooseLevel(
 	return step(0, "no strong signal");
 }
 
-async function askJev(agent: string, assignment: string): Promise<Signals | undefined> {
+async function askJev(agent: string, assignment: string): Promise<{ signals?: Signals; error?: string }> {
 	const key = process.env.TYPESAFE_API_KEY;
-	if (!key) return undefined;
+	if (!key) return { error: "TYPESAFE_API_KEY unset" };
 	try {
 		const response = await fetch(JEV_URL, {
 			method: "POST",
@@ -127,13 +132,14 @@ async function askJev(agent: string, assignment: string): Promise<Signals | unde
 			body: JSON.stringify({ model: JEV_MODEL, state: { agent, assignment }, questions: QUESTIONS }),
 			signal: AbortSignal.timeout(JEV_TIMEOUT_MS),
 		});
-		if (!response.ok) return undefined;
+		if (!response.ok) return { error: `HTTP ${response.status}` };
 		const { answers } = (await response.json()) as { answers?: Record<keyof Signals, { noul?: number }> };
 		const read = (name: keyof Signals) => answers?.[name]?.noul;
 		const signals = { exhaustive: read("exhaustive"), exact: read("exact"), urgent: read("urgent") };
-		return Object.values(signals).every((value) => typeof value === "number") ? (signals as Signals) : undefined;
-	} catch {
-		return undefined;
+		const complete = Object.values(signals).every((value) => typeof value === "number");
+		return complete ? { signals: signals as Signals } : { error: "incomplete answers" };
+	} catch (error) {
+		return { error: error instanceof Error ? error.name : "request failed" };
 	}
 }
 
