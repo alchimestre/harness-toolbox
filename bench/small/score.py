@@ -33,7 +33,7 @@ def read_run(path):
 
 
 def passed(kind, tag, answer):
-    if kind == "tools":
+    if kind in ("tools", "task"):
         return open(f"runs/{tag}.result").read().strip() == "pass"
     if kind == "scout":
         return all(re.search(p, answer) for p in (r"lib/util\.js:\d", r"\bcollapse\b", r"lib/legacy/strings\.js:\d", r"\bsqueeze\b"))
@@ -60,11 +60,29 @@ def main():
         commit = kinds.get("commit", [])
         scout = kinds.get("scout", [])
         runs = tools + commit + scout
+        if not runs:
+            continue
         print(
             f"| {model.replace('anthropic_', '')} | {sum(r[0] for r in tools)}/{len(tools)} "
             f"| {statistics.mean(r[2] for r in tools) if tools else 0:.1f} | {sum(r[3] for r in tools)} "
             f"| {sum(r[0] for r in commit)}/{len(commit)} | {sum(r[0] for r in scout)}/{len(scout)} | {statistics.mean(r[1] for r in runs):.4f} "
             f"| {statistics.mean(r[4] for r in runs):.0f} |"
+        )
+    print_task_table(rows)
+
+
+def print_task_table(rows):
+    print("\n| model:effort | task pass | decoy edited | tool calls | $ per task | secs |")
+    print("|---|---|---|---|---|---|")
+    for model, kinds in sorted(rows.items(), key=lambda item: item[0]):
+        task = kinds.get("task", [])
+        if not task:
+            continue
+        decoys = len(glob.glob(f"runs/task__{glob.escape(model)}__*.decoy"))
+        print(
+            f"| {model.replace('anthropic_', '')} | {sum(r[0] for r in task)}/{len(task)} | {decoys}/{len(task)} "
+            f"| {statistics.mean(r[2] for r in task):.1f} | {statistics.mean(r[1] for r in task):.4f} "
+            f"| {statistics.mean(r[4] for r in task):.0f} |"
         )
 
 
