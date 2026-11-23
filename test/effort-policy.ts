@@ -74,6 +74,16 @@ try {
 	await sweep.start({ prompt: "Find every caller." }, child("task"));
 	check(sweep.level === "high", "exhaustive assignment steps the child up");
 
+	let sentAssignment = "";
+	globalThis.fetch = (async (_url: string, init: { body: string }) => {
+		sentAssignment = JSON.parse(init.body).state.assignment;
+		return Response.json({ answers: { exhaustive: { noul: 0.9 }, exact: { noul: 0 }, urgent: { noul: 0 } } });
+	}) as unknown as typeof fetch;
+	const revived = childSession("medium");
+	await revived.start({ prompt: "", reason: "revive" }, child("task"));
+	await revived.start({ prompt: "Complete assignment thoroughly:\n\nFind every caller." }, child("task"));
+	check(revived.level === "high" && sentAssignment === "Find every caller.", "revive waits for the assignment; wrapper stripped");
+
 	globalThis.fetch = jevAnswers(0.1, 0.9);
 	const review = childSession("low");
 	await review.start({ prompt: "Fix line 3." }, child("reviewer"));

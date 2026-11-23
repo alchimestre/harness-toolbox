@@ -48,8 +48,10 @@ const QUESTIONS = {
 };
 
 const DECISION_ENTRY = "harness-toolbox.jev-effort-gate";
+// Every subagent prompt carries this wrapper; left in, it shifts Jev's signals away from the benched ones.
+const ASSIGNMENT_WRAPPER = /^Complete assignment thoroughly:\s*/;
 
-type StartEvent = { prompt?: string };
+type StartEvent = { prompt?: string; reason?: string };
 type ChildContext = { agent?: { kind?: string; id?: string; name?: string }; model?: { provider?: string } };
 type QuotaReport = { provider?: string; limits?: { window?: { id?: string }; amount?: { usedFraction?: number } }[] };
 
@@ -79,15 +81,16 @@ export default function jevEffortGate(pi: ExtensionAPI): void {
 			void refreshQuota();
 			return;
 		}
-		// Wakes and follow-ups re-fire this hook; the first assignment decides.
-		if (decided) return;
+		const assignment = (event.prompt ?? "").replace(ASSIGNMENT_WRAPPER, "").trim();
+		// A revive fires with an empty prompt; wait for the real assignment. Later wakes keep the first decision.
+		if (decided || event.reason === "revive" || !assignment) return;
 		decided = true;
 		const range = AGENT_RANGE[name];
 		const configured = pi.getThinkingLevel() as Level;
 		if (!range || !LEVELS.includes(configured)) return;
 
 		void refreshQuota();
-		const jev = await askJev(name, event.prompt ?? "");
+		const jev = await askJev(name, assignment);
 		const used = ctx.model?.provider ? quota.get(ctx.model.provider) : undefined;
 		const decision = chooseLevel(configured, range, jev.signals, used);
 		if (decision.level !== configured) pi.setThinkingLevel(decision.level);
@@ -114,7 +117,8 @@ export function chooseLevel(
 	const critical = quotaUsed !== undefined && quotaUsed >= QUOTA_CRITICAL;
 
 	if (!signals) return pressed ? step(-1, "no Jev signals, quota pressure") : step(0, "no Jev signals");
-	const exhaustive = signals.exhaustive >= SIGNAL_THRESHOLD;
+	// "Fix every typo in README.md" scores exhaustive too; a named target needs no wider search.
+	const exhaustive = signals.exhaustive >= SIGNAL_THRESHOLD && signals.exact < SIGNAL_THRESHOLD;
 	if (exhaustive && !critical) return step(1, `exhaustive ${signals.exhaustive.toFixed(2)}: accuracy first`);
 	if (exhaustive) return step(0, `exhaustive ${signals.exhaustive.toFixed(2)}, quota critical: hold`);
 	if (signals.exact >= SIGNAL_THRESHOLD) return step(-1, `exact target ${signals.exact.toFixed(2)}: cheaper and faster`);
