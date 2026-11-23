@@ -14,6 +14,7 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | writing | rule | `rules/writing.md` | Reader-facing document formats and ticket limits. |
 | readonly-reviewer | agent | `agents/readonly-reviewer.md` | Read-only change review: spec and standards axes kept separate, then correctness, security, performance, tests. Needs the diff passed in. |
 | review-high, review-low | agent | `agents/review-high.md`, `agents/review-low.md` | `readonly-reviewer` at high and low thinking. Bodies must stay identical to `readonly-reviewer`. |
+| task-fast | agent | `agents/task-fast.md` | Bundled `task` worker for when wall-clock time matters; pair with a faster, costlier model in `task.agentModelOverrides`. Body must stay identical to the bundled `task`. |
 | review bench | bench | `bench/review/` | Runs `readonly-reviewer` on diffs with planted bugs; scores recall, cost, time per model and effort. |
 | small-role bench | bench | `bench/small/` | Scores a tool-call fix, a commit subject, the bundled scout prompt, a multi-file spec fix with a decoy file, and an exploration fix (bug copies reachable only by search, a frozen decoy, a lookalike that must stay) per model and effort. |
 
@@ -41,7 +42,7 @@ ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
 3. Link the agents into the user agent directory:
 
 ```sh
-for agent in readonly-reviewer review-high review-low; do
+for agent in readonly-reviewer review-high review-low task-fast; do
   ln -s /path/to/harness-toolbox/agents/$agent.md ~/.omp/agent/agents/$agent.md
 done
 ```
