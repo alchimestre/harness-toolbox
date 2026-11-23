@@ -12,6 +12,8 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | ponytail-compatibility | skill | `skills/ponytail-compatibility/SKILL.md` | Makes applicable workflows and agent roles take precedence over conflicting Ponytail instructions of equal authority. |
 | code | rule | `rules/code.md` | Personal comment, readability, dependency, and repository portability constraints. |
 | writing | rule | `rules/writing.md` | Reader-facing document formats and ticket limits. |
+| readonly-reviewer | agent | `agents/readonly-reviewer.md` | Read-only change review: spec and standards axes kept separate, then correctness, security, performance, tests. Needs the diff passed in. |
+| review-high, review-low | agent | `agents/review-high.md`, `agents/review-low.md` | `readonly-reviewer` at high and low thinking. Bodies must stay identical to `readonly-reviewer`. |
 
 ## Install
 
@@ -34,7 +36,15 @@ ln -s /path/to/harness-toolbox/rules/code.md ~/.omp/agent/rules/code.md
 ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
 ```
 
-3. Restart the harness.
+3. Link the agents into the user agent directory:
+
+```sh
+for agent in readonly-reviewer review-high review-low; do
+  ln -s /path/to/harness-toolbox/agents/$agent.md ~/.omp/agent/agents/$agent.md
+done
+```
+
+4. Restart the harness.
 
 Set `providers.webSearchTimeoutSeconds: 30`. Under parallel load the search provider chain grinds for a minute per failed call.
 
