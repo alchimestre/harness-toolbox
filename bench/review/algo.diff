@@ -1,0 +1,113 @@
+Spec: "Performance and hardening pass, no behavior change. tierRate uses binary search (tiers sorted by min ascending; amount is never below the first tier). TokenBucket refills refillPerSecond tokens per second. LruCache holds capacity entries and evicts the least recently used only when a new key would exceed capacity. percentile(values, p) takes p in [0, 1], inclusive. listProducts pages start at 1. monthEnd(year, month) takes month 1-12. sameToken compares in constant time."
+
+diff --git a/src/cache.js b/src/cache.js
+index 497b2a6..aafddba 100644
+--- a/src/cache.js
++++ b/src/cache.js
+@@ -13,9 +13,9 @@ class LruCache {
+   }
+ 
+   set(key, value) {
++    if (this.map.size >= this.capacity) this.map.delete(this.map.keys().next().value);
+     this.map.delete(key);
+     this.map.set(key, value);
+-    if (this.map.size > this.capacity) this.map.delete(this.map.keys().next().value);
+   }
+ }
+ 
+diff --git a/src/limiter.js b/src/limiter.js
+index 9a8ed34..b108afc 100644
+--- a/src/limiter.js
++++ b/src/limiter.js
+@@ -1,16 +1,23 @@
++const MS_PER_SECOND = 1000;
++
+ class TokenBucket {
+   constructor(capacity, refillPerSecond, now = Date.now) {
+     this.capacity = capacity;
+-    this.refillPerSecond = refillPerSecond;
++    this.refillPerMs = refillPerSecond / MS_PER_SECOND;
+     this.tokens = capacity;
+     this.now = now;
+     this.last = now();
+   }
+ 
+-  take() {
++  refill() {
+     const current = this.now();
+-    this.tokens = Math.min(this.capacity, this.tokens + ((current - this.last) / 1000) * this.refillPerSecond);
++    const elapsedSeconds = (current - this.last) / MS_PER_SECOND;
++    this.tokens = Math.min(this.capacity, this.tokens + elapsedSeconds * this.refillPerMs);
+     this.last = current;
++  }
++
++  take() {
++    this.refill();
+     if (this.tokens < 1) return false;
+     this.tokens -= 1;
+     return true;
+diff --git a/src/listing.js b/src/listing.js
+index 3079b76..dc0914c 100644
+--- a/src/listing.js
++++ b/src/listing.js
+@@ -1,9 +1,11 @@
+ const { query } = require('./db');
+ 
+ function listProducts(page, size) {
+-  return query('SELECT * FROM products ORDER BY id LIMIT $1 OFFSET $2', [size, (page - 1) * size]);
++  const offset = (page - 1) * size;
++  return query('SELECT * FROM products ORDER BY id LIMIT $1 OFFSET $2', [size, offset]);
+ }
+ 
++// month is 1-12; day 0 of the next month is the last day of this one.
+ function monthEnd(year, month) {
+   return new Date(Date.UTC(year, month, 0));
+ }
+diff --git a/src/pricing.js b/src/pricing.js
+index 5170ff2..6112a56 100644
+--- a/src/pricing.js
++++ b/src/pricing.js
+@@ -1,6 +1,14 @@
+ // tiers sorted by min ascending; returns the rate of the highest tier whose min <= amount.
++// Binary search: price lists now have thousands of tiers.
+ function tierRate(tiers, amount) {
+-  return tiers.filter((tier) => tier.min <= amount).pop().rate;
++  let lo = 0;
++  let hi = tiers.length - 1;
++  while (lo < hi) {
++    const mid = (lo + hi) >> 1;
++    if (tiers[mid].min <= amount) lo = mid;
++    else hi = mid - 1;
++  }
++  return tiers[lo].rate;
+ }
+ 
+ module.exports = { tierRate };
+diff --git a/src/stats.js b/src/stats.js
+index d926988..4e7fd93 100644
+--- a/src/stats.js
++++ b/src/stats.js
+@@ -1,7 +1,6 @@
+ function percentile(values, p) {
+   const sorted = [...values].sort((a, b) => a - b);
+-  const index = Math.ceil(p * sorted.length) - 1;
+-  return sorted[Math.max(0, index)];
++  return sorted[Math.floor(p * sorted.length)];
+ }
+ 
+ module.exports = { percentile };
+diff --git a/src/tokens.js b/src/tokens.js
+index fbfee88..efe384b 100644
+--- a/src/tokens.js
++++ b/src/tokens.js
+@@ -1,7 +1,9 @@
+ const crypto = require('crypto');
+ 
+ function sameToken(given, expected) {
+-  return given === expected;
++  const a = Buffer.from(String(given));
++  const b = Buffer.from(String(expected));
++  return a.length === b.length && crypto.timingSafeEqual(a, b);
+ }
+ 
+ module.exports = { sameToken };

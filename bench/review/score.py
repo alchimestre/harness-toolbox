@@ -23,6 +23,18 @@ FINDINGS = {
         "forEach async": r"forEach.*async|async.*forEach|returns? (before|0)|not awaited|Promise\.all|for\.\.\.of",
         "per-line rounding": r"round(ing|s|ed)? (per|each) line|round.*once|half[- ]even|banker",
     },
+    "algo": {
+        "binary search never terminates": r"infinite loop|never terminat|never exit|hangs?\b|no progress|loops? forever|spin",
+        "refill rate divided twice": r"(divid|divis)\w*.{0,60}(twice|two times|1000 ?\* ?1000|10\^?6|million)|1,?000,?000|1e6|1000x|thousand(fold| times)|refillPerMs.{0,120}(second|elapsedSeconds)",
+        "eviction on update": r"(existing|already present|already in|update|overwrit|re-?set).{0,160}evict|evict.{0,160}(existing|already|update|overwrit|unnecessar)",
+        "percentile p=1 out of range": r"out of (bounds|range)|p ?(=|==|===) ?1\b|p of 1|1\.0\b|\[sorted\.length\]|past the end|returns undefined",
+    },
+    "algo2": {
+        "touching intervals not merged": r"touching|adjacent|interval\.start < last\.end|<= ?last\.end|\[0, ?30\).{0,60}\[30, ?60\)",
+        "chunk drops trailing items": r"(drop|lose|lost|omit|miss|skip)\w*.{0,80}(last|final|trailing|remainder|single)|items\.length - (size|1)",
+        "ring shift keeps count": r"count.{0,80}(not|never|isn't|without)\w*.{0,20}(decrement|reduc|updat)|(decrement|reduc)\w*.{0,40}count|count -= 1",
+        "negative weekday index": r"negative|-2.{0,60}(undefined|index)|% ?(WEEK|7).{0,80}(negative|sign)",
+    },
 }
 
 
@@ -66,15 +78,16 @@ def main():
         expected = model.replace("_", "/", 1).split(":")[0]
         assert responders == {expected}, f"{path}: answered by {responders}"
         secs = int(open(path[:-6] + ".secs").read())
-        rows[f"{agent} {model.replace('anthropic_', '')}"][case].append((len(found) / len(FINDINGS[case]), cost, output, secs, bool(text)))
-    print("| agent model:effort | easy recall | hard recall | subtle recall | $ per review | output tok | secs |")
-    print("|---|---|---|---|---|---|---|")
+        row = (len(found) / len(FINDINGS[case]), cost, output, secs, bool(text))
+        rows[f"{agent} {model.replace('anthropic_', '')}"][case].append(row)
+    print("| agent model:effort | " + " | ".join(f"{case} recall" for case in FINDINGS) + " | $ per review | output tok | secs |")
+    print("|---|" + "---|" * (len(FINDINGS) + 3))
     for model in sorted(rows):
         cases = rows[model]
         runs = [r for c in cases.values() for r in c]
-        recall = {c: f"{statistics.mean(r[0] for r in cases[c]):.0%}" for c in cases}
+        recall = [f"{statistics.mean(r[0] for r in cases[c]):.0%}" if c in cases else "-" for c in FINDINGS]
         print(
-            f"| {model} | {recall.get('easy', '-')} | {recall.get('hard', '-')} | {recall.get('subtle', '-')} "
+            f"| {model} | " + " | ".join(recall) + " "
             f"| {statistics.mean(r[1] for r in runs):.4f} | {statistics.mean(r[2] for r in runs):.0f} "
             f"| {statistics.mean(r[3] for r in runs):.0f} |"
         )

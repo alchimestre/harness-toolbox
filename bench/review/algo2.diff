@@ -1,0 +1,95 @@
+Spec: "Readability pass. No behavior change except splitCents, which now spreads the remainder one cent at a time."
+
+diff --git a/src/calendar.js b/src/calendar.js
+index fa78ba4..9ad73ff 100644
+--- a/src/calendar.js
++++ b/src/calendar.js
+@@ -1,7 +1,8 @@
+ const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
++const WEEK = DAYS.length;
+ 
+ function shiftWeekday(day, offset) {
+-  return DAYS[(((DAYS.indexOf(day) + offset) % 7) + 7) % 7];
++  return DAYS[(DAYS.indexOf(day) + offset) % WEEK];
+ }
+ 
+ module.exports = { shiftWeekday };
+diff --git a/src/chunks.js b/src/chunks.js
+index 760b0f3..2a6f0ec 100644
+--- a/src/chunks.js
++++ b/src/chunks.js
+@@ -1,6 +1,8 @@
+ function chunk(items, size) {
+   const chunks = [];
+-  for (let start = 0; start < items.length; start += size) chunks.push(items.slice(start, start + size));
++  let start = 0;
++  for (; start < items.length - size; start += size) chunks.push(items.slice(start, start + size));
++  if (start < items.length - 1) chunks.push(items.slice(start));
+   return chunks;
+ }
+ 
+diff --git a/src/intervals.js b/src/intervals.js
+index 46f79e4..d36ea59 100644
+--- a/src/intervals.js
++++ b/src/intervals.js
+@@ -1,10 +1,12 @@
+ // Merges booked intervals; [start, end) in minutes.
+ function merge(intervals) {
++  if (intervals.length < 2) return intervals.map((interval) => ({ ...interval }));
+   const sorted = [...intervals].sort((a, b) => a.start - b.start);
+-  const merged = [];
+-  for (const interval of sorted) {
++  const merged = [{ ...sorted[0] }];
++  for (const interval of sorted.slice(1)) {
+     const last = merged[merged.length - 1];
+-    if (last && interval.start <= last.end) last.end = Math.max(last.end, interval.end);
++    const overlaps = interval.start < last.end;
++    if (overlaps) last.end = Math.max(last.end, interval.end);
+     else merged.push({ ...interval });
+   }
+   return merged;
+diff --git a/src/ring.js b/src/ring.js
+index 83f2521..6eadfa5 100644
+--- a/src/ring.js
++++ b/src/ring.js
+@@ -6,17 +6,21 @@ class Ring {
+     this.count = 0;
+   }
+ 
++  get full() {
++    return this.count === this.size;
++  }
++
+   push(item) {
+     this.items[(this.head + this.count) % this.size] = item;
+-    if (this.count < this.size) this.count += 1;
+-    else this.head = (this.head + 1) % this.size;
++    if (this.full) this.head = (this.head + 1) % this.size;
++    else this.count += 1;
+   }
+ 
+   shift() {
+     if (this.count === 0) return undefined;
+     const item = this.items[this.head];
++    this.items[this.head] = undefined;
+     this.head = (this.head + 1) % this.size;
+-    this.count -= 1;
+     return item;
+   }
+ }
+diff --git a/src/split.js b/src/split.js
+index a676173..ddc3565 100644
+--- a/src/split.js
++++ b/src/split.js
+@@ -1,8 +1,8 @@
+ function splitCents(total, parts) {
+   const share = Math.floor(total / parts);
+-  const shares = new Array(parts).fill(share);
+-  shares[parts - 1] += total - share * parts;
+-  return shares;
++  const remainder = total - share * parts;
++  // The remainder goes to the first shares, one cent each, so no share differs by more than a cent.
++  return Array.from({ length: parts }, (_, index) => share + (index < remainder ? 1 : 0));
+ }
+ 
+ module.exports = { splitCents };

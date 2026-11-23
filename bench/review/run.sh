@@ -15,7 +15,12 @@ else
   omp agents unpack --dir "$dir/builtin" >/dev/null && mv "$dir/builtin/$agent.md" "$dir/agent.md" && rm -r "$dir/builtin"
 fi
 cp ../overlay.yml "$dir/"
-prompt="Follow the reviewer instructions in agent.md (ignore its frontmatter). Review the diff and spec below. Repo root: this directory (no source on disk; review from the diff alone).
+source_note="no source on disk; review from the diff alone"
+if [ -d "$case_" ]; then
+  cp -R "$case_/." "$dir/"
+  source_note="the post-change source is on disk; read unchanged files the diff depends on"
+fi
+prompt="Follow the reviewer instructions in agent.md (ignore its frontmatter). Review the diff and spec below. Repo root: this directory ($source_note).
 
 $(cat "$case_.diff")"
 start=$(date +%s)
