@@ -1,1 +1,1 @@
-cartTotal in src/cart.js returns '0.28' for one item priced '0.29'; node test.js shows it. Fix it so the code follows SPEC.md, without editing the test, and run node test.js until it prints ok. Reply with one line per file you changed.
+cartTotal in src/cart.js returns '0.28' for one item priced '0.29'; node test.js shows it. Make the whole codebase comply with SPEC.md, not just that function, without editing the test, and run node test.js until it prints ok. Reply with one line per file you changed.

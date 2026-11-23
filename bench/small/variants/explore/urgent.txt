@@ -1,1 +1,1 @@
-Hotfix, needed fast: customers are charged one cent less than the listed price (0.28 for 0.29). node test.js reproduces one instance. Make the code comply with SPEC.md, fix the source (not the test), and run node test.js until it prints ok. Reply with one line per file you changed.
+Hotfix, needed fast: customers are charged one cent less than the listed price (0.28 for 0.29). node test.js reproduces it. Make the whole codebase comply with SPEC.md, fix the source (not the test), and run node test.js until it prints ok. Reply with one line per file you changed.
