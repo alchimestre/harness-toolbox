@@ -1,0 +1,8 @@
+advisor:
+  enabled: false
+retry:
+  enabled: false
+  maxRetries: 0
+  modelFallback: false
+  fallbackChains: {}
+  usageAwareFallback: false

@@ -1,0 +1,35 @@
+Spec: "GET /invoices?page=N lists the signed-in user's invoices, 20 per page, pages start at 1. POST /invoices/:id/refund refunds an invoice the signed-in user owns, at most once. Webhook /hooks/pay must verify the X-Signature HMAC."
+
+diff --git a/invoices.js b/invoices.js
+--- a/invoices.js
++++ b/invoices.js
+@@ -1,3 +1,38 @@
++const crypto = require('node:crypto');
++const PAGE = 20;
++
++async function list(req, res) {
++  const page = parseInt(req.query.page || '1', 10);
++  const rows = await db.all(
++    'SELECT * FROM invoices WHERE user_id = ? ORDER BY id LIMIT ? OFFSET ?',
++    [req.user.id, PAGE, page * PAGE]);
++  res.json(rows);
++}
++
++async function refund(req, res) {
++  const inv = await db.get('SELECT * FROM invoices WHERE id = ?', [req.params.id]);
++  if (!inv) return res.status(404).end();
++  if (inv.refunded) return res.status(409).end();
++  await payments.refund(inv.charge_id, inv.amount);
++  await db.run('UPDATE invoices SET refunded = 1 WHERE id = ?', [inv.id]);
++  res.status(204).end();
++}
++
++function payHook(req, res) {
++  const expected = crypto.createHmac('sha256', process.env.HOOK_SECRET)
++    .update(req.rawBody).digest('hex');
++  if (expected != req.headers['x-signature']) return res.status(401).end();
++  markPaid(JSON.parse(req.rawBody).invoice_id);
++  res.status(200).end();
++}
++
++module.exports = { list, refund, payHook };

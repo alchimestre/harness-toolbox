@@ -1,0 +1,27 @@
+Spec: "getRate(currency) returns the EUR exchange rate, cached for 10 minutes, fetched at most once concurrently per currency. totalEUR(lines) sums line amounts (in cents, integers) converted to EUR cents, rounded half-even once at the end."
+
+diff --git a/rates.js b/rates.js
+--- a/rates.js
++++ b/rates.js
+@@ -1,2 +1,30 @@
++const TTL = 10 * 60;
++const cache = new Map();
++
++async function getRate(currency) {
++  const hit = cache.get(currency);
++  if (hit && Date.now() - hit.at < TTL) return hit.rate;
++  const rate = await fetchRate(currency);
++  cache.set(currency, { rate, at: Date.now() });
++  return rate;
++}
++
++async function totalEUR(lines) {
++  let total = 0;
++  lines.forEach(async (line) => {
++    const rate = await getRate(line.currency);
++    total += Math.round(line.cents * rate);
++  });
++  return total;
++}
++
++module.exports = { getRate, totalEUR };

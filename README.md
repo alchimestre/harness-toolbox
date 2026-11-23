@@ -14,6 +14,8 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | writing | rule | `rules/writing.md` | Reader-facing document formats and ticket limits. |
 | readonly-reviewer | agent | `agents/readonly-reviewer.md` | Read-only change review: spec and standards axes kept separate, then correctness, security, performance, tests. Needs the diff passed in. |
 | review-high, review-low | agent | `agents/review-high.md`, `agents/review-low.md` | `readonly-reviewer` at high and low thinking. Bodies must stay identical to `readonly-reviewer`. |
+| review bench | bench | `bench/review/` | Runs `readonly-reviewer` on diffs with planted bugs; scores recall, cost, time per model and effort. |
+| small-role bench | bench | `bench/small/` | Scores a tool-call fix, a commit subject, and the bundled scout prompt per model and effort. |
 
 ## Install
 
@@ -60,3 +62,16 @@ bun run test
 ```
 
 `test/simulate.ts` drives the guard through the load scenario. `test/wiring.ts` checks each extension against a fake harness API.
+
+## Bench
+
+Runs use `omp -p` with retries, model fallback, and the advisor off (`bench/overlay.yml`). They spend subscription quota. Each run takes 10–40 s.
+
+```sh
+bench/review/run.sh <easy|hard|subtle> anthropic/claude-haiku-5-5:low <rep>
+bench/small/run.sh <tools|commit|scout> anthropic/claude-haiku-5-5:low <rep>
+python3 bench/review/score.py
+python3 bench/small/score.py
+```
+
+Each scorer fails when a run was answered by a model other than the one requested.

@@ -1,0 +1,12 @@
+diff --git a/src/cache.ts b/src/cache.ts
+@@ -12,7 +12,9 @@ export class RateCache {
+   get(currency: string): Promise<number> {
+-    const hit = this.entries.get(currency);
+-    if (hit && Date.now() - hit.at < TTL) return Promise.resolve(hit.rate);
+-    return this.fetch(currency);
++    const pending = this.inflight.get(currency);
++    if (pending) return pending;
++    const request = this.fetch(currency).finally(() => this.inflight.delete(currency));
++    this.inflight.set(currency, request);
++    return request;
+   }

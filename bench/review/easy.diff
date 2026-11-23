@@ -1,0 +1,21 @@
+Spec: "GET /files?name=<n> returns the contents of uploads/<n>. Reject names that escape uploads/ with 400."
+
+diff --git a/server.js b/server.js
+--- a/server.js
++++ b/server.js
+@@ -1,6 +1,14 @@
+ const http = require('node:http');
+ const fs = require('node:fs');
++const { execSync } = require('node:child_process');
+ 
+ http.createServer((req, res) => {
+-  res.end('ok');
++  const url = new URL(req.url, 'http://x');
++  const name = url.searchParams.get('name');
++  if (url.pathname === '/files') {
++    const body = execSync('cat uploads/' + name).toString();
++    res.end(body);
++    return;
++  }
++  res.end('ok');
+ }).listen(8080);
