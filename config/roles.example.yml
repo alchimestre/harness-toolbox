@@ -1,6 +1,6 @@
 modelRoles:
   default: anthropic/claude-opus-5-5:medium
-  slow: anthropic/claude-opus-5-5:medium
+  slow: anthropic/claude-opus-5-5:high
   plan: anthropic/claude-opus-5-5:medium
   task: anthropic/claude-haiku-5-5:medium
   designer: anthropic/claude-sonnet-5-5:medium
@@ -59,7 +59,7 @@ retry:
       - anthropic/claude-sonnet-5-5
       - openai-codex/gpt-6.2-sol
     advisor:
-      - anthropic/claude-sonnet-5-5
+      - openai-codex/gpt-6.2-astra
 compaction:
   modelThresholds:
     # Haiku's window is 100k and prompts above it bill at a higher rate
