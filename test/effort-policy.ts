@@ -1,6 +1,6 @@
-// Checks the effort policy's precedence and bounds. Run: bun test/effort-policy.ts
+// Checks the effort policy and the child-side hook. Run: bun test/effort-policy.ts
 
-import { chooseLevel } from "../extensions/jev-effort-gate.ts";
+import gate, { chooseLevel } from "../extensions/jev-effort-gate.ts";
 
 function check(condition: unknown, label: string): void {
 	if (!condition) throw new Error(`FAIL ${label}`);
@@ -22,12 +22,69 @@ check(chooseLevel("medium", full, undefined, undefined).level === "medium", "Jev
 check(chooseLevel("high", ["medium", "high"], { ...quiet, exhaustive: 0.9 }, 0.2).level === "high", "range caps step up");
 check(chooseLevel("medium", ["medium", "high"], { ...quiet, exact: 0.9 }, 0.2).level === "medium", "range floors step down");
 
-const handlers: Record<string, (event: unknown) => unknown> = {};
-const fakePi = { on: (name: string, handler: (event: unknown) => unknown) => (handlers[name] = handler), exec: async () => ({ code: 1, stdout: "" }) };
+type Start = (event: unknown, ctx: unknown) => Promise<unknown>;
+
+function childSession(level: string) {
+	const session = { level, entries: [] as unknown[], start: undefined as unknown as Start };
+	const pi = {
+		on: (name: string, handler: Start) => {
+			if (name === "before_agent_start") session.start = handler;
+		},
+		exec: async () => ({ code: 1, stdout: "" }),
+		getThinkingLevel: () => session.level,
+		setThinkingLevel: (next: string) => (session.level = next),
+		appendEntry: (_type: string, data: unknown) => session.entries.push(data),
+	};
+	gate(pi as never);
+	return session;
+}
+
+const child = (name: string) => ({ agent: { kind: "sub", id: "Same", name }, model: { provider: "anthropic" } });
 delete process.env.TYPESAFE_API_KEY;
-(await import("../extensions/jev-effort-gate.ts")).default(fakePi as never);
-handlers.tool_call({ toolName: "task", input: { tasks: [{ name: "One", agent: "task", task: "Sweep every file." }] } });
-const routed = (await handlers.before_subagent_spawn({ agent: "task", patterns: ["anthropic/claude-haiku-5-5:medium", "openai-codex/gpt-6.2-sol"], spawnKey: "One" })) as { model: string[]; note: string };
-check(routed.model[0] === "anthropic/claude-haiku-5-5:medium" && routed.model[1] === "openai-codex/gpt-6.2-sol", "no key keeps effort and fallback tail");
-check(routed.note.includes("TYPESAFE_API_KEY unset"), "no key is reported in the note");
-check((await handlers.before_subagent_spawn({ agent: "review-high", patterns: ["anthropic/claude-sonnet-5-5:medium"], spawnKey: "Two" })) === undefined, "pinned agent untouched");
+
+const unkeyed = childSession("medium");
+await unkeyed.start({ prompt: "Sweep every file." }, child("task"));
+const entry = unkeyed.entries[0] as { jevError?: string };
+check(unkeyed.level === "medium" && entry.jevError === "TYPESAFE_API_KEY unset", "no key keeps effort and records why");
+
+const pinned = childSession("medium");
+await pinned.start({ prompt: "Review this." }, child("review-high"));
+check(pinned.level === "medium" && pinned.entries.length === 0, "pinned agent untouched");
+
+const main = childSession("medium");
+await main.start({ prompt: "Do it." }, { agent: { kind: "main", id: "Main", name: "main" } });
+check(main.entries.length === 0, "main session untouched");
+
+// Same child id in a second session (a reused task name) must still be decided.
+const first = childSession("medium");
+const second = childSession("medium");
+await first.start({ prompt: "a" }, child("task"));
+await first.start({ prompt: "b" }, child("task"));
+await second.start({ prompt: "c" }, child("task"));
+check(first.entries.length === 1 && second.entries.length === 1, "one decision per session, reused ids included");
+check(chooseLevel("high", ["low", "medium"], { exhaustive: 0, exact: 0, urgent: 0 }, 0.2).level === "high", "configured level above range holds without a signal");
+
+const realFetch = globalThis.fetch;
+const jevAnswers = (exhaustive: number, exact: number) =>
+	(async () => Response.json({ answers: { exhaustive: { noul: exhaustive }, exact: { noul: exact }, urgent: { noul: 0 } } })) as unknown as typeof fetch;
+process.env.TYPESAFE_API_KEY = "test";
+try {
+	globalThis.fetch = jevAnswers(0.9, 0.1);
+	const sweep = childSession("medium");
+	await sweep.start({ prompt: "Find every caller." }, child("task"));
+	check(sweep.level === "high", "exhaustive assignment steps the child up");
+
+	globalThis.fetch = jevAnswers(0.1, 0.9);
+	const review = childSession("low");
+	await review.start({ prompt: "Fix line 3." }, child("reviewer"));
+	check(review.level === "low", "step down stops at the range floor");
+
+	globalThis.fetch = (async () => new Response("", { status: 503 })) as unknown as typeof fetch;
+	const outage = childSession("medium");
+	await outage.start({ prompt: "Find every caller." }, child("task"));
+	const logged = outage.entries[0] as { jevError?: string };
+	check(outage.level === "medium" && logged.jevError === "HTTP 503", "Jev outage keeps effort and logs status");
+} finally {
+	globalThis.fetch = realFetch;
+	delete process.env.TYPESAFE_API_KEY;
+}

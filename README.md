@@ -8,7 +8,7 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 |---|---|---|---|
 | search-guard | extension | `extensions/search-guard.ts` | Caps `web_search` at 15 calls, rewrites provider errors to forbid retries, injects the policy at agent start. Logic in `src/guard-core.ts`. |
 | advisor-cross-family | extension | `extensions/advisor-cross-family.ts` | Moves the advisor role to another model family when the session's live model changes provider. Checks the configured role, not the model a fallback chain lands on. |
-| jev-effort-gate | extension | `extensions/jev-effort-gate.ts` | Moves a subagent's thinking effort one step at spawn from Jev signals on its assignment (exhaustive, exact target, urgent) and provider quota. Model stays as configured; fails open without `TYPESAFE_API_KEY`. |
+| jev-effort-gate | extension | `extensions/jev-effort-gate.ts` | Moves a subagent's thinking effort one step when the child starts (`task`, eval `agent()` and workpool spawns), from Jev signals on its assignment (stops-at-first-match risk, exact target, urgent) and provider quota. Model and fallbacks stay as configured; each decision is logged as a `harness-toolbox.jev-effort-gate` session entry; fails open without `TYPESAFE_API_KEY`. |
 | search-hang | skill | `skills/search-hang/SKILL.md` | The anti-hang policy for agents that read skills. |
 | ponytail-compatibility | skill | `skills/ponytail-compatibility/SKILL.md` | Makes applicable workflows and agent roles take precedence over conflicting Ponytail instructions of equal authority. |
 | code | rule | `rules/code.md` | Personal comment, readability, dependency, and repository portability constraints. |
@@ -76,6 +76,7 @@ bench/review/run.sh <easy|hard|subtle> anthropic/claude-haiku-5-5:low <rep>
 bench/small/run.sh <tools|commit|scout|task|explore> anthropic/claude-haiku-5-5:low <rep>
 python3 bench/review/score.py
 python3 bench/small/score.py
+TYPESAFE_API_KEY=... python3 bench/small/replay.py   # fixed effort vs jev-effort-gate vs shuffled control, from existing runs
 ```
 
 Each scorer fails when a run was answered by a model other than the one requested.

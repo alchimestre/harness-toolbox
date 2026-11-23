@@ -1,6 +1,7 @@
-// Picks each subagent's thinking effort at spawn from Jev signals on its assignment and
-// the provider's remaining quota. The model stays the one config resolved; only the
-// effort suffix moves, one step at most, inside the agent's range below.
+// Sets each subagent's thinking effort when it starts, from Jev signals on its own
+// assignment and the provider's remaining quota. Runs inside the child, so task, eval
+// agent() and workpool spawns are all covered. Only the level moves, one step at most,
+// inside the agent's range below; the model and its fallback chain stay as configured.
 
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
@@ -30,7 +31,7 @@ const QUESTIONS = {
 	exhaustive: {
 		type: "noul",
 		instructions:
-			"Does doing this correctly require finding every instance of something across many files, or tracing behavior across components, where one missed instance makes the result wrong?",
+			"Would a worker who stops at the first plausible match give a wrong or incomplete result, because the assignment asks for all instances, for other places that do the same thing, or for confirmation that nothing else exists?",
 	},
 	exact: {
 		type: "noul",
@@ -43,15 +44,19 @@ const QUESTIONS = {
 	},
 };
 
-type Pending = { agent: string; text: string };
-type TaskInput = { context?: string; tasks?: { name?: string; agent?: string; task?: string; solutionSpace?: string }[] };
-type SpawnEvent = { agent: string; patterns?: string[]; spawnKey?: string };
+const DECISION_ENTRY = "harness-toolbox.jev-effort-gate";
+
+type StartEvent = { prompt?: string };
+type ChildContext = { agent?: { kind?: string; id?: string; name?: string }; model?: { provider?: string } };
 type QuotaReport = { provider?: string; limits?: { window?: { id?: string }; amount?: { usedFraction?: number } }[] };
 
+// Shared by the parent and every child session in the process, so one fetch serves all.
+let quota = new Map<string, number>();
+let quotaFetchedAt = 0;
+
+// The factory runs once per session, so `decided` is per child.
 export default function jevEffortGate(pi: ExtensionAPI): void {
-	const pending = new Map<string, Pending>();
-	let quota = new Map<string, number>();
-	let quotaFetchedAt = 0;
+	let decided = false;
 
 	const refreshQuota = async () => {
 		if (Date.now() - quotaFetchedAt < QUOTA_TTL_MS) return;
@@ -65,35 +70,25 @@ export default function jevEffortGate(pi: ExtensionAPI): void {
 		}
 	};
 
-	pi.on("session_start", () => {
-		void refreshQuota();
-	});
-
-	pi.on("tool_call", (event: { toolName?: string; input?: unknown }) => {
-		if (event.toolName !== "task") return;
-		const input = event.input as TaskInput;
-		for (const item of input.tasks ?? []) {
-			if (!item.name || !item.agent) continue;
-			const text = [input.context, item.task, item.solutionSpace].filter(Boolean).join("\n\n");
-			pending.set(item.name, { agent: item.agent, text });
+	pi.on("before_agent_start", async (event: StartEvent, ctx: ChildContext) => {
+		const { kind, id, name } = ctx.agent ?? {};
+		if (kind !== "sub" || !id || !name) {
+			void refreshQuota();
+			return;
 		}
-	});
-
-	pi.on("before_subagent_spawn", async (event: SpawnEvent) => {
-		const assignment = event.spawnKey ? pending.get(event.spawnKey) : undefined;
-		if (event.spawnKey) pending.delete(event.spawnKey);
-		const range = AGENT_RANGE[event.agent];
-		const [primary, ...fallbacks] = event.patterns ?? [];
-		const match = primary?.match(/^(.+):(low|medium|high)$/);
-		if (!range || !match) return undefined;
-		const [, model, configured] = match as unknown as [string, string, Level];
+		// Wakes and follow-ups re-fire this hook; the first assignment decides.
+		if (decided) return;
+		decided = true;
+		const range = AGENT_RANGE[name];
+		const configured = pi.getThinkingLevel() as Level;
+		if (!range || !LEVELS.includes(configured)) return;
 
 		void refreshQuota();
-		const jev = assignment?.agent === event.agent ? await askJev(event.agent, assignment.text) : { error: "no assignment text" };
-		const used = quota.get(model.split("/")[0]);
+		const jev = await askJev(name, event.prompt ?? "");
+		const used = ctx.model?.provider ? quota.get(ctx.model.provider) : undefined;
 		const decision = chooseLevel(configured, range, jev.signals, used);
-		const note = jev.error ? `${decision.reason}; Jev: ${jev.error}` : decision.reason;
-		return { model: [`${model}:${decision.level}`, ...fallbacks], note };
+		if (decision.level !== configured) pi.setThinkingLevel(decision.level);
+		pi.appendEntry(DECISION_ENTRY, { configured, ...decision, signals: jev.signals, jevError: jev.error });
 	});
 }
 
@@ -104,9 +99,12 @@ export function chooseLevel(
 	quotaUsed: number | undefined,
 ): { level: Level; reason: string } {
 	const quotaNote = quotaUsed === undefined ? "quota unknown" : `quota ${Math.round(quotaUsed * 100)}%`;
+	const current = LEVELS.indexOf(configured);
+	// The range bounds movement; a configured level outside it stays put rather than snapping in.
+	const floor = Math.min(LEVELS.indexOf(min), current);
+	const ceiling = Math.max(LEVELS.indexOf(max), current);
 	const step = (delta: number, why: string) => {
-		const index = LEVELS.indexOf(configured) + delta;
-		const bounded = Math.min(Math.max(index, LEVELS.indexOf(min)), LEVELS.indexOf(max));
+		const bounded = Math.min(Math.max(current + delta, floor), ceiling);
 		return { level: LEVELS[bounded], reason: `${why}; ${quotaNote}` };
 	};
 	const pressed = quotaUsed !== undefined && quotaUsed >= QUOTA_PRESSURE;
@@ -122,7 +120,7 @@ export function chooseLevel(
 	return step(0, "no strong signal");
 }
 
-async function askJev(agent: string, assignment: string): Promise<{ signals?: Signals; error?: string }> {
+export async function askJev(agent: string, assignment: string): Promise<{ signals?: Signals; error?: string }> {
 	const key = process.env.TYPESAFE_API_KEY;
 	if (!key) return { error: "TYPESAFE_API_KEY unset" };
 	try {
