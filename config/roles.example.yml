@@ -59,7 +59,7 @@ retry:
       - anthropic/claude-sonnet-5-5
       - openai-codex/gpt-6.2-sol
     advisor:
-      - openai-codex/gpt-6.2-astra
+      - openai-codex/gpt-6.2-sol
 compaction:
   modelThresholds:
     # Haiku's window is 100k and prompts above it bill at a higher rate
