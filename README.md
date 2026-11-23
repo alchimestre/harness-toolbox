@@ -8,6 +8,7 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 |---|---|---|---|
 | search-guard | extension | `extensions/search-guard.ts` | Caps `web_search` at 15 calls, rewrites provider errors to forbid retries, injects the policy at agent start. Logic in `src/guard-core.ts`. |
 | advisor-cross-family | extension | `extensions/advisor-cross-family.ts` | Moves the advisor role to another model family when the session's live model changes provider. Checks the configured role, not the model a fallback chain lands on. |
+| jev-effort-gate | extension | `extensions/jev-effort-gate.ts` | Moves a subagent's thinking effort one step at spawn from Jev signals on its assignment (exhaustive, exact target, urgent) and provider quota. Model stays as configured; fails open without `TYPESAFE_API_KEY`. |
 | search-hang | skill | `skills/search-hang/SKILL.md` | The anti-hang policy for agents that read skills. |
 | ponytail-compatibility | skill | `skills/ponytail-compatibility/SKILL.md` | Makes applicable workflows and agent roles take precedence over conflicting Ponytail instructions of equal authority. |
 | code | rule | `rules/code.md` | Personal comment, readability, dependency, and repository portability constraints. |
@@ -27,6 +28,7 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 extensions:
   - /path/to/harness-toolbox/extensions/search-guard.ts
   - /path/to/harness-toolbox/extensions/advisor-cross-family.ts
+  - /path/to/harness-toolbox/extensions/jev-effort-gate.ts
 skills:
   customDirectories:
     - /path/to/harness-toolbox/skills
