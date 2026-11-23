@@ -14,7 +14,7 @@ import sys
 
 from score import passed, read_run
 
-MODEL = "anthropic_claude-haiku-5-5"
+MODEL = (sys.argv[1] if len(sys.argv) > 1 else "anthropic/claude-haiku-5-5").replace("/", "_", 1)
 LEVELS = ("low", "medium", "high")
 AGENT_FOR_KIND = {"tools": "task", "task": "task", "explore": "task", "scout": "scout"}
 PICKS_FILE = "runs/gate-picks.json"

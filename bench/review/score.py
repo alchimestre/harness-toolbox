@@ -56,27 +56,29 @@ def usage(path):
 
 def main():
     rows = defaultdict(lambda: defaultdict(list))
-    for path in glob.glob("runs/*.jsonl"):
-        case, model, _rep = path[5:-6].split("__")
+    for path in glob.glob("runs/**/*.jsonl", recursive=True):
+        parent = os.path.basename(os.path.dirname(path))
+        agent = "readonly-reviewer" if parent == "runs" else parent
+        case, model, _rep = os.path.basename(path)[:-6].split("__")
         text = final_text(path)
         found = [name for name, pattern in FINDINGS[case].items() if re.search(pattern, text, re.I)]
         cost, output, responders = usage(path)
         expected = model.replace("_", "/", 1).split(":")[0]
         assert responders == {expected}, f"{path}: answered by {responders}"
         secs = int(open(path[:-6] + ".secs").read())
-        rows[model][case].append((len(found) / len(FINDINGS[case]), cost, output, secs, bool(text)))
-    print("| model:effort | easy recall | hard recall | subtle recall | $ per review | output tok | secs |")
+        rows[f"{agent} {model.replace('anthropic_', '')}"][case].append((len(found) / len(FINDINGS[case]), cost, output, secs, bool(text)))
+    print("| agent model:effort | easy recall | hard recall | subtle recall | $ per review | output tok | secs |")
     print("|---|---|---|---|---|---|---|")
-    for model in sorted(rows, key=lambda m: statistics.mean(r[1] for c in rows[m].values() for r in c)):
+    for model in sorted(rows):
         cases = rows[model]
         runs = [r for c in cases.values() for r in c]
         recall = {c: f"{statistics.mean(r[0] for r in cases[c]):.0%}" for c in cases}
         print(
-            f"| {model.replace('anthropic_', '')} | {recall.get('easy', '-')} | {recall.get('hard', '-')} | {recall.get('subtle', '-')} "
+            f"| {model} | {recall.get('easy', '-')} | {recall.get('hard', '-')} | {recall.get('subtle', '-')} "
             f"| {statistics.mean(r[1] for r in runs):.4f} | {statistics.mean(r[2] for r in runs):.0f} "
             f"| {statistics.mean(r[3] for r in runs):.0f} |"
         )
-    empty = [p for p in glob.glob("runs/*.jsonl") if not final_text(p)]
+    empty = [p for p in glob.glob("runs/**/*.jsonl", recursive=True) if not final_text(p)]
     if empty:
         print("\nno final answer:", *empty, sep="\n")
 

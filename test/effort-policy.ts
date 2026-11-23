@@ -86,7 +86,7 @@ try {
 
 	globalThis.fetch = jevAnswers(0.1, 0.9);
 	const review = childSession("low");
-	await review.start({ prompt: "Fix line 3." }, child("reviewer"));
+	await review.start({ prompt: "Fix line 3." }, child("task"));
 	check(review.level === "low", "step down stops at the range floor");
 
 	globalThis.fetch = (async () => new Response("", { status: 503 })) as unknown as typeof fetch;

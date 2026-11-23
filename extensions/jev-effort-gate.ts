@@ -18,16 +18,11 @@ const LEVELS = ["low", "medium", "high"] as const;
 
 type Level = (typeof LEVELS)[number];
 export type Signals = { exhaustive: number; exact: number; urgent: number };
-// Agents whose effort may move. Agents named for a level (review-low, review-high) and
-// task-fast stay pinned: on the explore bench Sonnet below high dropped to 4-6/8 from 8/8.
-// Ranges stop at high: Haiku xhigh scored no better than high (scout 4/6, explore 6/6) at 1.5x cost.
-// sonic may only step down from its configured medium; upward is unbenched.
+// Agents whose effort may move. Only task is benched across levels with the gate; every
+// other agent runs at its configured level until its own bench shows a gain.
+// The range stops at high: Haiku xhigh scored no better than high (scout 4/6, explore 6/6) at 1.5x cost.
 const AGENT_RANGE: Record<string, [Level, Level]> = {
 	task: ["low", "high"],
-	scout: ["low", "high"],
-	reviewer: ["low", "medium"],
-	"readonly-reviewer": ["low", "medium"],
-	sonic: ["low", "medium"],
 };
 
 const QUESTIONS = {
