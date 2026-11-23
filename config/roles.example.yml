@@ -15,7 +15,7 @@ task:
   maxConcurrency: 8
   agentModelOverrides:
     task-fast: anthropic/claude-sonnet-5-5:high
-    scout: anthropic/claude-sonnet-5-5:medium
+    scout: anthropic/claude-sonnet-5-5:low
     reviewer: anthropic/claude-haiku-5-5:medium
     readonly-reviewer: anthropic/claude-haiku-5-5:medium
     review-low: anthropic/claude-haiku-5-5:low
