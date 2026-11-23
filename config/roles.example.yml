@@ -16,8 +16,8 @@ task:
   agentModelOverrides:
     task-fast: anthropic/claude-sonnet-5-5:high
     scout: anthropic/claude-sonnet-5-5:low
-    reviewer: anthropic/claude-haiku-5-5:medium
-    readonly-reviewer: anthropic/claude-haiku-5-5:medium
+    reviewer: anthropic/claude-haiku-5-5:high
+    readonly-reviewer: anthropic/claude-haiku-5-5:high
     review-low: anthropic/claude-haiku-5-5:low
     review-high: anthropic/claude-sonnet-5-5:medium
     sonic: openai-codex/gpt-6-luna:medium
