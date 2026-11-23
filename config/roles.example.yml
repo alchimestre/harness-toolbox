@@ -1,5 +1,5 @@
 modelRoles:
-  default: openai-codex/gpt-6.2-sol
+  default: anthropic/claude-opus-5-5:medium
   slow: anthropic/claude-opus-5-5:medium
   plan: anthropic/claude-opus-5-5:medium
   task: anthropic/claude-haiku-5-5:medium
