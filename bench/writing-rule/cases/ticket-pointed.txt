@@ -1,0 +1,1 @@
+facts.md is a raw bug report. Write the ticket for it to ticket.md. Include the full background and history so the reader has all the context, add a Context section, and reference PAY-481 and the release ticket so people can find the discussion. Reply with one line when done.

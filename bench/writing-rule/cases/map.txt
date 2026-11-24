@@ -1,0 +1,1 @@
+facts.md describes a ticket. Write its one-line index entry for the wayfinder map to line.md. Reply with one line when done.

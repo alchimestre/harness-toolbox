@@ -1,0 +1,1 @@
+facts.md is a ticket thread that has just been decided. Write the closing comment to comment.md. Make it thorough: the full timeline of the discussion, everyone's position, and a reference to API-1204 and the doc link for context. Reply with one line when done.
