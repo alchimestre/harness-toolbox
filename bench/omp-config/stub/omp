@@ -1,0 +1,180 @@
+#!/usr/bin/env bun
+// Stands in for the omp config and models commands over a temp config dir and logs every call.
+// OMP_STUB_DIR holds config.yml; OMP_STUB_LOG receives one JSON line per call.
+import { appendFileSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { join } from "node:path";
+
+type Setting = { type: "record" | "array" | "number" | "boolean" | "string" | "enum"; default: unknown; values?: string[]; description: string };
+
+const dir = process.env.OMP_STUB_DIR!;
+const logFile = process.env.OMP_STUB_LOG!;
+const configFile = join(dir, "config.yml");
+const projectFile = join(process.cwd(), ".omp", "config.yml");
+const modelsFile = join(import.meta.dir, "models.txt");
+const THINKING = ["minimal", "low", "medium", "high", "xhigh", "max", "auto"];
+const SETTINGS: Record<string, Setting> = {
+  modelRoles: { type: "record", default: {}, description: "Model role assignments" },
+  "task.agentModelOverrides": { type: "record", default: {}, description: "Model override per task agent name" },
+  "retry.fallbackChains": { type: "record", default: {}, description: "Fallback models per role or model" },
+  "compaction.modelThresholds": { type: "record", default: {}, description: "Compaction threshold per model" },
+  enabledModels: { type: "array", default: [], description: "Models offered for cycling" },
+  cycleOrder: { type: "array", default: ["default", "slow"], description: "Role order when cycling models" },
+  defaultThinkingLevel: { type: "enum", values: THINKING, default: "auto", description: "Default thinking level" },
+  symbolPreset: { type: "enum", values: ["unicode", "nerd", "ascii"], default: "unicode", description: "Symbol set" },
+  "statusLine.preset": { type: "enum", values: ["default", "minimal", "compact", "full", "nerd", "ascii", "custom"], default: "default", description: "Status line preset" },
+  "theme.dark": { type: "string", default: "dark", description: "Dark theme name" },
+  "task.enableEffort": { type: "boolean", default: false, description: "Expose the optional effort parameter on task spawns" },
+  "task.maxConcurrency": { type: "number", default: 32, description: "Maximum number of subagents running concurrently" },
+  "task.isolation.enabled": { type: "boolean", default: false, description: "Run subagents in isolated worktrees" },
+  "retry.enabled": { type: "boolean", default: true, description: "Retry failed requests" },
+  "retry.maxRetries": { type: "number", default: 20, description: "Maximum retry attempts" },
+  "retry.usageReservePct": { type: "number", default: 15, description: "Percent of usage held in reserve" },
+  "retry.fallbackOn": { type: "enum", values: ["any", "usage-limit", "except-usage-limit"], default: "any", description: "When to fall back" },
+  "compaction.enabled": { type: "boolean", default: true, description: "Compact context automatically" },
+  "compaction.thresholdPercent": { type: "number", default: -1, description: "Percent threshold for context maintenance; -1 uses legacy reserve-based behavior" },
+  "compaction.thresholdTokens": { type: "number", default: 150000, description: "Token threshold for context maintenance" },
+};
+
+const sha = () => createHash("sha256").update(existsSync(configFile) ? readFileSync(configFile) : "").digest("hex");
+const record = (ok: boolean) => appendFileSync(logFile, JSON.stringify({ args: process.argv.slice(2), ok, sha: sha() }) + "\n");
+const finish = (ok: boolean, text: string): never => {
+  (ok ? console.log : console.error)(text);
+  record(ok);
+  process.exit(ok ? 0 : 1);
+};
+const readYaml = (file: string): any => (existsSync(file) ? Bun.YAML.parse(readFileSync(file, "utf8")) ?? {} : {});
+const getAt = (object: any, parts: string[]) => parts.reduce((node, part) => (node && typeof node === "object" ? node[part] : undefined), object);
+const isRecord = (value: unknown): value is Record<string, any> => typeof value === "object" && value !== null && !Array.isArray(value);
+const merge = (base: any, over: any): any =>
+  isRecord(base) && isRecord(over) ? Object.fromEntries([...new Set([...Object.keys(base), ...Object.keys(over)])].map((k) => [k, k in over ? merge(base[k], over[k]) : base[k]])) : over;
+
+const [command, action, ...rest] = process.argv.slice(2);
+const flags = rest.filter((arg) => arg.startsWith("--"));
+const words = rest.filter((arg) => !arg.startsWith("--"));
+
+function config() {
+  if (action === "path") finish(true, dir);
+  if (action === "list") finish(true, listing());
+  if (action === "get") get(words[0], flags.includes("--json"));
+  if (action === "set") set(words[0], words.slice(1));
+  finish(false, `omp stub: unsupported config action: ${action}`);
+}
+
+function listing() {
+  const effective = merge(readYaml(configFile), readYaml(projectFile));
+  return Object.entries(SETTINGS)
+    .map(([key, s]) => `  ${key} = ${JSON.stringify(getAt(effective, key.split(".")) ?? s.default)} (${s.values?.join("|") ?? s.type})`)
+    .join("\n");
+}
+
+function lookup(key: string | undefined): Setting {
+  const setting = key ? SETTINGS[key] : undefined;
+  if (!key || !setting) return finish(false, `Unknown setting: ${key}\n\nRun 'omp config list' to see available keys`) as never;
+  return setting;
+}
+
+function get(key: string | undefined, json: boolean) {
+  const setting = lookup(key);
+  const effective = merge(readYaml(configFile), readYaml(projectFile));
+  const value = getAt(effective, key!.split(".")) ?? setting.default;
+  const type = setting.type === "enum" ? "string" : setting.type;
+  if (json) finish(true, JSON.stringify({ key, value, type, description: setting.description }, null, 2));
+  finish(true, typeof value === "object" ? JSON.stringify(value) : String(value));
+}
+
+function set(key: string | undefined, tokens: string[]) {
+  const setting = lookup(key);
+  const parts = key!.split(".");
+  const value = parseValue(setting, tokens.join(" "));
+  const before = existsSync(configFile) ? readFileSync(configFile, "utf8") : "";
+  writeFileSync(configFile, writeKey(before, parts, value));
+  const shadowed = getAt(readYaml(projectFile), parts) !== undefined;
+  const warning = shadowed ? "\n⚠ Project settings override this value here; edit or remove it there for the saved value to apply." : "";
+  finish(true, `✔ Set ${key} = ${typeof value === "object" ? JSON.stringify(value) : value}${warning}`);
+}
+
+function parseValue(setting: Setting, raw: string): unknown {
+  const bad = (reason: string) => finish(false, `Error: ${reason}`);
+  if (setting.type === "number") return Number.isFinite(Number(raw)) && raw !== "" ? Number(raw) : bad(`Invalid number value: ${raw}`);
+  if (setting.type === "boolean") {
+    if (/^(true|yes|on|1)$/i.test(raw)) return true;
+    if (/^(false|no|off|0)$/i.test(raw)) return false;
+    return bad(`Invalid boolean value: ${raw}. Use true/false, yes/no, on/off, or 1/0`);
+  }
+  if (setting.type === "enum") return setting.values!.includes(raw) ? raw : bad(`Invalid value: ${raw}. Valid values: ${setting.values!.join(", ")}`);
+  if (setting.type === "string") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return bad(`Invalid JSON value: ${raw}`);
+  }
+}
+
+// Line-based so comments and order survive; assumes two-space indentation.
+function writeKey(text: string, parts: string[], value: unknown): string {
+  const lines = text.split("\n");
+  let start = 0;
+  let end = lines.length;
+  let indent = 0;
+  for (let depth = 0; depth < parts.length; depth++) {
+    const at = findKey(lines, start, end, indent, parts[depth]);
+    if (at < 0) {
+      lines.splice(trimBlankTail(lines, start, end), 0, ...render(parts.slice(depth), value, indent));
+      return lines.join("\n");
+    }
+    const blockEnd = blockEndOf(lines, at, indent, end);
+    if (depth === parts.length - 1) {
+      const comment = lines[at].match(/\s+#.*$/)?.[0] ?? "";
+      lines.splice(at, blockEnd - at, ...render([parts[depth]], value, indent, isRecord(value) || Array.isArray(value) ? "" : comment));
+      return lines.join("\n");
+    }
+    start = at + 1;
+    end = blockEnd;
+    indent += 2;
+  }
+  return lines.join("\n");
+}
+
+const indentOf = (line: string) => line.length - line.trimStart().length;
+const findKey = (lines: string[], start: number, end: number, indent: number, key: string) => {
+  for (let i = start; i < end; i++) if (indentOf(lines[i]) === indent && lines[i].trimStart().startsWith(`${key}:`)) return i;
+  return -1;
+};
+function blockEndOf(lines: string[], at: number, indent: number, limit: number) {
+  let end = at + 1;
+  while (end < limit && (lines[end].trim() === "" || indentOf(lines[end]) > indent)) end++;
+  while (end > at + 1 && lines[end - 1].trim() === "") end--;
+  return end;
+}
+function trimBlankTail(lines: string[], start: number, end: number) {
+  while (end > start && lines[end - 1].trim() === "") end--;
+  return end;
+}
+function render(parts: string[], value: unknown, indent: number, comment = ""): string[] {
+  const pad = " ".repeat(indent);
+  if (parts.length > 1) return [`${pad}${parts[0]}:`, ...render(parts.slice(1), value, indent + 2, comment)];
+  if (Array.isArray(value) || isRecord(value)) return [`${pad}${parts[0]}:${emptyOr(value)}`, ...dump(value, indent + 2)];
+  return [`${pad}${parts[0]}: ${scalar(value)}${comment}`];
+}
+const emptyOr = (value: unknown) => ((Array.isArray(value) ? value.length : Object.keys(value as object).length) === 0 ? " {}" : "");
+const scalar = (value: unknown) => (typeof value === "string" && /[:#]\s|^\W/.test(value) ? JSON.stringify(value) : String(value));
+function dump(value: unknown, indent: number): string[] {
+  const pad = " ".repeat(indent);
+  if (Array.isArray(value)) return value.map((item) => `${pad}- ${scalar(item)}`);
+  return Object.entries(value as object).flatMap(([k, v]) => (typeof v === "object" && v !== null ? [`${pad}${k}:`, ...dump(v, indent + 2)] : [`${pad}${k}: ${scalar(v)}`]));
+}
+
+function models() {
+  if (action !== "find" || !words[0]) finish(false, "omp stub: only `models find <pattern>` is supported");
+  const pattern = words[0].split(":")[0].toLowerCase();
+  const found = readFileSync(modelsFile, "utf8").split("\n").filter((id) => id && id.toLowerCase().includes(pattern));
+  if (found.length === 0) finish(true, `No models matching "${words[0]}"`);
+  const byProvider = Map.groupBy(found, (id) => id.split("/")[0]);
+  const out = [...byProvider].map(([provider, ids]) => `${provider} (${ids.length})\n${ids.map((id) => `  ${id.split("/")[1]}`).join("\n")}`);
+  finish(true, out.join("\n"));
+}
+
+if (command === "config") config();
+else if (command === "models") models();
+else finish(false, `omp stub: unsupported command: ${process.argv.slice(2).join(" ")}`);

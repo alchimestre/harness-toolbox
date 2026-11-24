@@ -1,0 +1,70 @@
+modelRoles:
+  default: anthropic/claude-opus-5-5:medium
+  slow: anthropic/claude-opus-5-5:high
+  plan: anthropic/claude-opus-5-5:medium
+  task: anthropic/claude-haiku-5-5:high
+  designer: anthropic/claude-sonnet-5-5:medium
+  smol: anthropic/claude-haiku-5-5:low
+  commit: anthropic/claude-haiku-5-5:low
+  tiny: anthropic/claude-haiku-5-5:off
+  vision: openai-codex/gpt-5.6-terra:medium
+  advisor: openai-codex/gpt-6.2-sol:high
+task:
+  # true lets the parent's per-spawn effort hint override every level below
+  enableEffort: false
+  maxConcurrency: 8
+  agentModelOverrides:
+    task-fast: anthropic/claude-sonnet-5-5:high
+    scout: anthropic/claude-sonnet-5-5:low
+    reviewer: anthropic/claude-haiku-5-5:high
+    readonly-reviewer: anthropic/claude-haiku-5-5:high
+    review-low: anthropic/claude-haiku-5-5:low
+    review-high: anthropic/claude-sonnet-5-5:medium
+    repo-audit: anthropic/claude-sonnet-5-5:medium
+    sonic: openai-codex/gpt-6-luna:medium
+    librarian: openai-codex/gpt-6-luna:low
+retry:
+  rateLimitWalksChain: true
+  fallbackOn: any
+  usageAwareFallback: true
+  usageReservePolicy: auto
+  usageReservePct: 15
+  fallbackChains:
+    openai-codex/gpt-6.2-sol:
+      - anthropic/claude-sonnet-5-5
+    anthropic/claude-opus-5-5:
+      - openai-codex/gpt-6.2-sol
+    anthropic/claude-sonnet-5-5:
+      - openai-codex/gpt-6.2-sol
+    default:
+      - openai-codex/gpt-6.2-sol
+    slow:
+      - openai-codex/gpt-6.2-sol
+    plan:
+      - openai-codex/gpt-6.2-sol
+    task:
+      - openai-codex/gpt-6.2-sol
+    designer:
+      - openai-codex/gpt-6.2-sol
+    commit:
+      - openai-codex/gpt-6.2-sol
+    smol:
+      - openai-codex/gpt-6-luna
+      - openai-codex/gpt-6.2-sol
+      - anthropic/claude-sonnet-5-5
+    tiny:
+      - openai-codex/gpt-6-luna
+      - openai-codex/gpt-6.2-sol
+      - anthropic/claude-sonnet-5-5
+    vision:
+      - anthropic/claude-sonnet-5-5
+      - openai-codex/gpt-6.2-sol
+    advisor:
+      - openai-codex/gpt-6.2-sol
+compaction:
+  modelThresholds:
+    # Haiku's window is 100k and prompts above it bill at a higher rate
+    anthropic/claude-haiku-5-5: f80000
+    anthropic/claude-sonnet-5-5: f250000
+    anthropic/claude-opus-5-5: f250000
+    openai-codex/gpt-6.2-sol: f250000

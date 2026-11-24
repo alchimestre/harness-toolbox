@@ -1,0 +1,2 @@
+retry:
+  maxRetries: 3
