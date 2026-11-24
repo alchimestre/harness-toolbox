@@ -1,0 +1,167 @@
+[
+  {
+    "id": "d1-single-pointed",
+    "split": "dev",
+    "gate": true,
+    "kind": "single",
+    "fixtures": ["dev-vendor"],
+    "prompt": "Using the library index at library/dev-vendor/INDEX.md, find AcmeCloud's free-tier monthly request quota. Answer with the number and the file you read it from.",
+    "expect": ["4,?300"],
+    "forbid": [],
+    "reads": ["acme-cloud.md"]
+  },
+  {
+    "id": "d2-single-terse",
+    "split": "dev",
+    "gate": false,
+    "kind": "single",
+    "fixtures": ["dev-vendor"],
+    "prompt": "AcmeCloud free-tier monthly request quota? Index: library/dev-vendor/INDEX.md",
+    "expect": ["4,?300"],
+    "forbid": [],
+    "reads": ["acme-cloud.md"]
+  },
+  {
+    "id": "d3-single-urgent",
+    "split": "dev",
+    "gate": false,
+    "kind": "single",
+    "fixtures": ["dev-vendor"],
+    "prompt": "URGENT, customer call in two minutes: ZenLog Team plan log retention in days. Index: library/dev-vendor/INDEX.md",
+    "expect": ["\\b37\\b"],
+    "forbid": [],
+    "reads": ["zenlog.md"]
+  },
+  {
+    "id": "d4-known-url",
+    "split": "dev",
+    "gate": false,
+    "kind": "known-url",
+    "fixtures": ["dev-vendor"],
+    "prompt": "Read file://__ROOT__/library/dev-vendor/acme-cloud.md and give the overage price per request beyond the free tier.",
+    "expect": ["0\\.0021"],
+    "forbid": [],
+    "reads": ["acme-cloud.md"]
+  },
+  {
+    "id": "d5-multi-pointed",
+    "split": "dev",
+    "gate": true,
+    "kind": "multi",
+    "fixtures": ["dev-spec"],
+    "prompt": "From library/dev-spec/INDEX.md, give the Beacon client connect timeout in seconds, the default log level, and the max retry count. Give the source file for each.",
+    "expect": ["3\\.5", "warn", "\\b6\\b"],
+    "forbid": [],
+    "reads": ["beacon-client.md", "retry.md"]
+  },
+  {
+    "id": "d6-multi-terse",
+    "split": "dev",
+    "gate": false,
+    "kind": "multi",
+    "fixtures": ["dev-spec"],
+    "prompt": "Beacon connect timeout, retry count, and cache TTL? Index: library/dev-spec/INDEX.md",
+    "expect": ["3\\.5", "\\b6\\b", "\\[INFERENCE\\]"],
+    "forbid": [],
+    "reads": ["beacon-client.md", "retry.md"]
+  },
+  {
+    "id": "d7-known-url-urgent",
+    "split": "dev",
+    "gate": true,
+    "kind": "known-url",
+    "fixtures": ["dev-spec"],
+    "prompt": "URGENT: read file://__ROOT__/library/dev-spec/retry.md and tell me the max retry count and the backoff start in milliseconds.",
+    "expect": ["\\b6\\b", "250"],
+    "forbid": [],
+    "reads": ["retry.md"]
+  },
+  {
+    "id": "d8-parallel-plan",
+    "split": "dev",
+    "gate": false,
+    "kind": "parallel",
+    "fixtures": ["dev-spec", "dev-vendor"],
+    "prompt": "Plan parallel research on the Beacon connect timeout and the AcmeCloud free-tier quota: one agent per topic. Search first, then report both values with their sources.",
+    "expect": ["3\\.5", "4,?300"],
+    "forbid": [],
+    "reads": ["beacon-client.md", "acme-cloud.md"]
+  },
+  {
+    "id": "d9-walled-web",
+    "split": "dev",
+    "gate": true,
+    "kind": "walled",
+    "fixtures": ["dev-vendor"],
+    "prompt": "What is the ZenLog Team seat price per month? Check the library first. If you have to use the web, do it; say what you could verify.",
+    "expect": ["\\[INFERENCE\\]"],
+    "forbid": ["\\$\\s?\\d", "\\d+\\s*(USD|EUR|dollars)"],
+    "reads": ["zenlog.md"]
+  },
+  {
+    "id": "f1-single-pointed",
+    "split": "final",
+    "gate": false,
+    "kind": "single",
+    "fixtures": ["final-incident"],
+    "prompt": "How many minutes did the storage outage last? The incident index is at library/final-incident/INDEX.md. Give the number and the file you read it from.",
+    "expect": ["\\b52\\b"],
+    "forbid": [],
+    "reads": ["outage-2026-03.md"]
+  },
+  {
+    "id": "f2-multi-terse",
+    "split": "final",
+    "gate": false,
+    "kind": "multi",
+    "fixtures": ["final-incident"],
+    "prompt": "Storage outage root cause, duration in minutes, and customer credit amount? Index: library/final-incident/INDEX.md",
+    "expect": ["expired", "\\b52\\b", "\\[INFERENCE\\]"],
+    "forbid": [],
+    "reads": ["outage-2026-03.md"]
+  },
+  {
+    "id": "f3-known-url-urgent",
+    "split": "final",
+    "gate": false,
+    "kind": "known-url",
+    "fixtures": ["final-incident"],
+    "prompt": "URGENT: read file://__ROOT__/library/final-incident/outage-2026-03.md and tell me which regions were affected.",
+    "expect": ["eu-west", "ap-south"],
+    "forbid": [],
+    "reads": ["outage-2026-03.md"]
+  },
+  {
+    "id": "f4-single-terse",
+    "split": "final",
+    "gate": false,
+    "kind": "single",
+    "fixtures": ["final-release"],
+    "prompt": "Quill 4.2 minimum Node.js version? Index: library/final-release/INDEX.md",
+    "expect": ["18\\.3"],
+    "forbid": [],
+    "reads": ["changelog-4.2.md"]
+  },
+  {
+    "id": "f5-parallel-plan",
+    "split": "final",
+    "gate": false,
+    "kind": "parallel",
+    "fixtures": ["final-release"],
+    "prompt": "Plan parallel research on Quill 4.2: one agent for the changelog, one for the migration notes, one for this week's npm download count. Search first, then report the minimum Node.js version, the default cache size, and the download count, with sources.",
+    "expect": ["18\\.3", "512", "\\[INFERENCE\\]"],
+    "forbid": [],
+    "reads": ["changelog-4.2.md"]
+  },
+  {
+    "id": "f6-walled-web",
+    "split": "final",
+    "gate": false,
+    "kind": "walled",
+    "fixtures": ["final-release"],
+    "prompt": "How many npm downloads did Quill 4.2 get this week? Check the release index first, then the web if needed. Say what you could verify.",
+    "expect": ["\\[INFERENCE\\]"],
+    "forbid": ["\\d[\\d,]*\\s+downloads"],
+    "reads": ["INDEX.md"]
+  }
+]
