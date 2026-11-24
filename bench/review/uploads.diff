@@ -1,0 +1,67 @@
+Spec: "Uploads: stored files stay under UPLOAD_ROOT, labels are at most 64 letters, digits, '-', '_' or spaces, the list sorts only by whitelisted columns, and only raster images (never SVG) are served inline."
+
+diff --git a/src/routes/uploads.js b/src/routes/uploads.js
+index 79ea7d5..e06db0d 100644
+--- a/src/routes/uploads.js
++++ b/src/routes/uploads.js
+@@ -1,10 +1,24 @@
+ const express = require('express');
+ const { createUpload, findUpload, listUploads } = require('../db');
+ const { writeUpload, readUpload } = require('../storage');
++const { isValidLabel, orderColumn } = require('../validators');
++const { isInlineSafe } = require('../mime');
++
++const DEFAULT_SORT = 'created';
+ 
+ const router = express.Router();
+ 
++function sortDirection(dir) {
++  return dir === 'asc' ? 'ASC' : 'DESC';
++}
++
++function contentDisposition(upload) {
++  const kind = isInlineSafe(upload.content_type) ? 'inline' : 'attachment';
++  return `${kind}; filename*=UTF-8''${encodeURIComponent(upload.name)}`;
++}
++
+ router.post('/', async (req, res, next) => {
++  if (!isValidLabel(req.body.label)) return res.status(400).json({ error: 'invalid label' });
+   try {
+     const bytes = Buffer.from(req.body.content, 'base64');
+     const storedPath = await writeUpload(req.user.id, req.body.name, bytes);
+@@ -24,7 +38,8 @@ router.post('/', async (req, res, next) => {
+ 
+ router.get('/', async (req, res, next) => {
+   try {
+-    res.json(await listUploads(req.user.id, 'created_at', 'DESC'));
++    const column = orderColumn(req.query.sort ?? DEFAULT_SORT);
++    res.json(await listUploads(req.user.id, column, sortDirection(req.query.dir)));
+   } catch (error) {
+     next(error);
+   }
+@@ -36,7 +51,7 @@ router.get('/:id/content', async (req, res, next) => {
+     if (!upload || upload.owner_id !== req.user.id) return res.status(404).json({ error: 'not found' });
+     const bytes = await readUpload(upload.stored_path);
+     res.setHeader('Content-Type', upload.content_type);
+-    res.setHeader('Content-Disposition', `attachment; filename="${upload.name}"`);
++    res.setHeader('Content-Disposition', contentDisposition(upload));
+     return res.send(bytes);
+   } catch (error) {
+     return next(error);
+diff --git a/src/storage.js b/src/storage.js
+index 1bc8296..cbef501 100644
+--- a/src/storage.js
++++ b/src/storage.js
+@@ -4,9 +4,9 @@ const { UPLOAD_ROOT } = require('./config');
+ 
+ function resolveUpload(ownerId, name) {
+   const root = path.resolve(UPLOAD_ROOT);
+-  const resolved = path.normalize(`${root}${path.sep}${ownerId}${path.sep}${name}`);
+-  if (!resolved.startsWith(root + path.sep)) throw new Error('path escapes upload root');
+-  return resolved;
++  const requested = `${root}${path.sep}${ownerId}${path.sep}${name}`;
++  if (!requested.startsWith(root + path.sep)) throw new Error('path escapes upload root');
++  return path.normalize(requested);
+ }
+ 
+ async function writeUpload(ownerId, name, bytes) {

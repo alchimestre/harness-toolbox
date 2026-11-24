@@ -1,0 +1,14 @@
+{
+  "defects": {
+    "split remainder off by one": "Split uses Amount(i) <= rem, so one extra cent goes to the part after the remainder, and the parts sum to more than total.",
+    "post appends duplicates": "Post appends the entry to the entries slice before the duplicate-ID check, so a repeated ID is stored twice and Balance counts it twice.",
+    "balance includes to": "Balance uses !After(to), so entries dated exactly at to are included, although to is supposed to be exclusive.",
+    "accrue truncates": "Accrue computes integer division balance*bps/10000, which truncates toward zero instead of rounding half to even to the cent.",
+    "daily uses local zone": "Daily formats e.Date without UTC(), so the day key is the local calendar date of the entry, not the UTC day."
+  },
+  "decoys": {
+    "decoy balance predicate reorder": "Reordering the Balance predicate to test the date bounds before the account changes which entries are summed, because the account test is no longer the first check.",
+    "decoy daily accumulate rewrite": "Rewriting days[day] += e.Amount as days[day] = days[day] + e.Amount changes the daily totals for days with more than one entry.",
+    "decoy zero rate guard removed": "Removing the bps == 0 early return from Accrue changes results when the rate is zero, because the function then computes interest from the balance even at a zero rate."
+  }
+}

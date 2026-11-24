@@ -1,0 +1,110 @@
+Spec: "Worker runs every pending job that is due, where a job is due when its run time is at or before the current time, compared in UTC. A RetryableError reschedules the job with exponential backoff until it has run max_attempts times, and any other error fails it at once. Each retry tags only its own job. Each notifier reports the job it was created for."
+
+diff --git a/src/jobs/backoff.py b/src/jobs/backoff.py
+index 7698d5a..97bd28a 100644
+--- a/src/jobs/backoff.py
++++ b/src/jobs/backoff.py
+@@ -3,9 +3,9 @@ CAP_SECONDS = 3600
+ 
+ 
+ def retry_delay(attempts):
+-    if attempts <= 0:
+-        return BASE_SECONDS
+-    return min(BASE_SECONDS * 2 ** attempts, CAP_SECONDS)
++    if attempts > 0:
++        return min(BASE_SECONDS * 2 ** attempts, CAP_SECONDS)
++    return BASE_SECONDS
+ 
+ 
+ def next_run_at(now, attempts):
+diff --git a/src/jobs/batch.py b/src/jobs/batch.py
+index b85ac67..d1fb797 100644
+--- a/src/jobs/batch.py
++++ b/src/jobs/batch.py
+@@ -1,11 +1,9 @@
+-from functools import partial
+-
+ from jobs.queue import enqueue
+ from jobs.worker import run_job
+ 
+ 
+ def report_thunks(jobs, report):
+-    return [partial(report, job) for job in jobs]
++    return [lambda: report(job) for job in jobs]
+ 
+ 
+ def flush_reports(thunks):
+diff --git a/src/jobs/journal.py b/src/jobs/journal.py
+index 75ae51e..fdabcbc 100644
+--- a/src/jobs/journal.py
++++ b/src/jobs/journal.py
+@@ -1,8 +1,9 @@
+ import json
++from pathlib import Path
+ 
+ JOURNAL_PATH = "jobs.journal.jsonl"
+ 
+ 
+ def record(entry):
+-    with open(JOURNAL_PATH, "a", encoding="utf-8") as handle:
++    with Path(JOURNAL_PATH).open("a", encoding="utf-8") as handle:
+         handle.write(json.dumps(entry) + "\n")
+diff --git a/src/jobs/queue.py b/src/jobs/queue.py
+index cd96247..c0e7754 100644
+--- a/src/jobs/queue.py
++++ b/src/jobs/queue.py
+@@ -5,13 +5,13 @@ from jobs import store
+ from jobs.models import Job
+ 
+ 
+-def enqueue(conn, payload, run_at=None, max_attempts=3, tags=None):
++def enqueue(conn, payload, run_at=None, max_attempts=3, tags=[]):
+     job = Job(
+         job_id=str(uuid.uuid4()),
+         payload=payload,
+         run_at=time.time() if run_at is None else run_at,
+         max_attempts=max_attempts,
+-        tags=[] if tags is None else list(tags),
++        tags=tags,
+     )
+     store.save(conn, job)
+     return job
+diff --git a/src/jobs/worker.py b/src/jobs/worker.py
+index adf754c..2541820 100644
+--- a/src/jobs/worker.py
++++ b/src/jobs/worker.py
+@@ -7,11 +7,11 @@ from jobs.journal import record
+ 
+ 
+ def current_epoch():
+-    return datetime.now(UTC).timestamp()
++    return datetime.now(UTC).replace(tzinfo=None).timestamp()
+ 
+ 
+ def is_due(job, now):
+-    return job.run_at <= now
++    return job.run_at < now
+ 
+ 
+ def run_due(conn, handlers, now=None):
+@@ -35,10 +35,10 @@ def run_job(conn, job, handlers, now):
+ 
+ 
+ def reschedule(conn, job, now, error):
+-    job.attempts += 1
+     if job.attempts >= job.max_attempts:
+         finish(conn, job, "failed", error)
+         return
++    job.attempts += 1
+     job.tags.append("retried")
+     job.run_at = next_run_at(now, job.attempts)
+     job.status = "pending"
+@@ -46,7 +46,7 @@ def reschedule(conn, job, now, error):
+ 
+ 
+ def finish(conn, job, status, error):
+-    job.status = status
+     job.last_error = None if error is None else str(error)
++    job.status = status
+     store.save(conn, job)
+     record({"job_id": job.job_id, "status": status})

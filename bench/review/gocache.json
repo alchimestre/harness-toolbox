@@ -1,0 +1,16 @@
+{
+  "defects": {
+    "KeysForTag aliases index": "KeysForTag appends the parent tag's keys onto the index's own slice, so the returned slice shares the index's backing array; a caller's append or a later Set on that tag then overwrites entries the other side holds.",
+    "restore empty nils maps": "Restore with an empty snapshot sets entries and tags to nil, so the next Set writes to a nil map and panics.",
+    "Len value receiver": "Len has a value receiver, so the RLock is taken on a copy of the mutex and the live map is read without synchronization.",
+    "restore shadowed err": "In Restore the loop's err shadows the named result, so the break after a failed load returns a nil error and a partial load is reported as success.",
+    "budget int32 overflow": "The budget is computed in int32, so max_memory_mb of 2048 or more wraps to a negative MaxBytes and every Set evicts everything, including the entry just stored.",
+    "warm leaks workers": "The results channel became unbuffered while Warm now returns on the first error, so workers still sending results block forever and leak."
+  },
+  "decoys": {
+    "decoy loop capture": "The goroutines in WarmTenants capture the loop variable keys by reference, so every goroutine warms the last tenant's keys.",
+    "decoy Get expiry rewrite": "Rewriting the expiry test in Get as expires.Compare(now) <= 0 returns entries that expired exactly at now, because the comparison is inclusive where the old Before test was exclusive.",
+    "decoy reordered used bytes": "Moving the c.used update in Set below the tag loop lets eviction run before the byte count includes the new value, so Set can leave the cache over budget.",
+    "decoy delete presence check": "Guarding Delete with an existence check before removeLocked changes behavior for missing keys, because the check skips index cleanup that removeLocked would have done."
+  }
+}

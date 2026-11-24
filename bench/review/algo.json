@@ -1,0 +1,9 @@
+{
+  "defects": {
+    "binary search never terminates": "tierRate's loop sets lo = mid; when hi = lo + 1 and tiers[mid].min <= amount, mid == lo and the loop never terminates.",
+    "refill rate divided twice": "refillPerMs is already divided by 1000 and is multiplied by elapsed seconds, so the bucket refills 1000 times too slowly.",
+    "eviction on update": "set evicts the least recently used entry when the cache is full even if the key already exists, so updating an existing key drops another entry.",
+    "percentile p=1 out of range": "percentile indexes sorted[floor(p * length)], which is past the end (undefined) for p = 1."
+  },
+  "decoys": {}
+}

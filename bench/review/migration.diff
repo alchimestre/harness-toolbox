@@ -1,0 +1,314 @@
+Spec: "Store order money as integer cents, rename the 'pending' status to 'awaiting_payment', replace the unique external_ref index with a plain lookup index, and add a customer tier defaulting to 'standard'; existing rows keep their values, rollbacks keep every cent, and ingest still deduplicates on external_ref."
+
+diff --git a/src/api/routes.ts b/src/api/routes.ts
+index 7d7b5d2..c7e123e 100644
+--- a/src/api/routes.ts
++++ b/src/api/routes.ts
+@@ -32,13 +32,13 @@ export async function getOrderByRef(req: HttpRequest, res: HttpResponse): Promis
+     res.status(404).json({ error: 'not found' });
+     return;
+   }
+-  res.status(200).json(order);
++  res.status(200).json(toApiOrder(order));
+ }
+ 
+ export async function listOrders(req: HttpRequest, res: HttpResponse): Promise<void> {
+   const customerId = Number(req.params.customerId);
+   const orders: Order[] = await listByCustomer(customerId);
+-  res.status(200).json({ orders });
++  res.status(200).json({ orders: orders.map(toApiOrder) });
+ }
+ 
+ export async function payOrder(req: HttpRequest, res: HttpResponse): Promise<void> {
+@@ -56,6 +56,16 @@ export async function payOrder(req: HttpRequest, res: HttpResponse): Promise<voi
+   res.status(200).json({ paid: true });
+ }
+ 
++function toApiOrder(order: Order) {
++  return {
++    id: order.id,
++    external_ref: order.external_ref,
++    customer_id: order.customer_id,
++    total: order.total_cents / 100,
++    status: order.status,
++  };
++}
++
+ export function handleError(error: unknown, res: HttpResponse): void {
+   if (error instanceof ValidationError) {
+     res.status(error.status).json({ error: error.message });
+diff --git a/src/api/server.ts b/src/api/server.ts
+index cd14d8d..1ef97a4 100644
+--- a/src/api/server.ts
++++ b/src/api/server.ts
+@@ -1,6 +1,7 @@
+ import { getOrderByRef, handleError, listOrders, payOrder, postOrder } from './routes.js';
+ import type { HttpRequest, HttpResponse } from './routes.js';
+ import { dispatchShipment, deliverShipment, listShipments, postShipment } from './shipments.js';
++import { getCustomerSummary, getOrderExport, getTopCustomers } from './summary.js';
+ import { createLogger } from '../lib/logger.js';
+ 
+ const log = createLogger('server');
+@@ -12,6 +13,9 @@ export const ROUTES: Record<string, Handler> = {
+   'GET /orders/:ref': getOrderByRef,
+   'GET /customers/:customerId/orders': listOrders,
+   'POST /orders/:id/pay': payOrder,
++  'GET /customers/:customerId/summary': getCustomerSummary,
++  'GET /summary/top': getTopCustomers,
++  'GET /exports/orders': getOrderExport,
+ };
+ 
+ export async function dispatchRequest(method: string, path: string, req: HttpRequest, res: HttpResponse): Promise<void> {
+diff --git b/src/api/summary.ts b/src/api/summary.ts
+new file mode 100644
+index 0000000..1c627f2
+--- /dev/null
++++ b/src/api/summary.ts
+@@ -0,0 +1,23 @@
++import { customerSummary, topCustomers } from '../db/order_summary.js';
++import { exportOrders } from '../db/order_export.js';
++import type { HttpRequest, HttpResponse } from './routes.js';
++
++const DEFAULT_TOP_LIMIT = 10;
++const DEFAULT_DISCOUNT_PERCENT = 5;
++
++export async function getCustomerSummary(req: HttpRequest, res: HttpResponse): Promise<void> {
++  const customerId = Number(req.params.customerId);
++  const summary = await customerSummary(customerId, DEFAULT_DISCOUNT_PERCENT);
++  res.status(200).json(summary);
++}
++
++export async function getTopCustomers(_req: HttpRequest, res: HttpResponse): Promise<void> {
++  const summaries = await topCustomers(DEFAULT_TOP_LIMIT);
++  res.status(200).json({ customers: summaries });
++}
++
++export async function getOrderExport(req: HttpRequest, res: HttpResponse): Promise<void> {
++  const customerId = req.params.customerId ? Number(req.params.customerId) : null;
++  const rows = await exportOrders(customerId);
++  res.status(200).json({ rows });
++}
+diff --git a/src/db/ingest.ts b/src/db/ingest.ts
+index cf5f026..a9b3473 100644
+--- a/src/db/ingest.ts
++++ b/src/db/ingest.ts
+@@ -2,14 +2,15 @@ import { pool } from './client.js';
+ import type { IncomingOrder } from '../types.js';
+ 
+ export async function ingestOrder(order: IncomingOrder): Promise<'inserted' | 'duplicate'> {
+-  if (order.total < 0) {
+-    throw new Error('negative total');
+-  }
+   const result = await pool.query(
+-    `INSERT INTO orders (external_ref, customer_id, total, status)
+-     VALUES ($1, $2, $3, 'pending')
++    `INSERT INTO orders (external_ref, customer_id, total_cents, status)
++     VALUES ($1, $2, $3, 'awaiting_payment')
+      ON CONFLICT (external_ref) DO NOTHING`,
+-    [order.externalRef, order.customerId, order.total],
++    [order.externalRef, order.customerId, toCents(order.total)],
+   );
+   return result.rowCount === 1 ? 'inserted' : 'duplicate';
+ }
++
++function toCents(total: number): number {
++  return Math.round(total * 100);
++}
+diff --git b/src/db/migrations/0003_money_cents.sql b/src/db/migrations/0003_money_cents.sql
+new file mode 100644
+index 0000000..71b3ba1
+--- /dev/null
++++ b/src/db/migrations/0003_money_cents.sql
+@@ -0,0 +1,10 @@
++ALTER TABLE orders ADD COLUMN total_cents bigint;
++UPDATE orders SET total_cents = round(total * 100);
++ALTER TABLE orders ALTER COLUMN total_cents SET NOT NULL;
++ALTER TABLE orders ALTER COLUMN total_cents SET DEFAULT 0;
++ALTER TABLE orders DROP COLUMN total;
++
++-- down
++ALTER TABLE orders ADD COLUMN total numeric(10, 2) NOT NULL DEFAULT 0;
++UPDATE orders SET total = total_cents / 100;
++ALTER TABLE orders DROP COLUMN total_cents;
+diff --git b/src/db/migrations/0004_order_status.sql b/src/db/migrations/0004_order_status.sql
+new file mode 100644
+index 0000000..b9ac380
+--- /dev/null
++++ b/src/db/migrations/0004_order_status.sql
+@@ -0,0 +1,11 @@
++ALTER TABLE orders DROP CONSTRAINT orders_status_check;
++ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'awaiting_payment';
++ALTER TABLE orders ADD CONSTRAINT orders_status_check
++  CHECK (status IN ('awaiting_payment', 'paid', 'shipped', 'cancelled'));
++
++-- down
++ALTER TABLE orders DROP CONSTRAINT orders_status_check;
++ALTER TABLE orders ADD CONSTRAINT orders_status_check
++  CHECK (status = ANY (ARRAY['pending', 'paid', 'shipped', 'cancelled']));
++ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';
++UPDATE orders SET status = 'pending' WHERE status = 'awaiting_payment';
+diff --git b/src/db/migrations/0005_external_ref_index.sql b/src/db/migrations/0005_external_ref_index.sql
+new file mode 100644
+index 0000000..d17f76b
+--- /dev/null
++++ b/src/db/migrations/0005_external_ref_index.sql
+@@ -0,0 +1,8 @@
++DROP INDEX orders_external_ref_key;
++CREATE INDEX orders_external_ref_idx ON orders (external_ref);
++ALTER TABLE customers ADD COLUMN tier text NOT NULL;
++
++-- down
++ALTER TABLE customers DROP COLUMN tier;
++DROP INDEX orders_external_ref_idx;
++CREATE UNIQUE INDEX orders_external_ref_key ON orders (external_ref);
+diff --git b/src/db/order_export.ts b/src/db/order_export.ts
+new file mode 100644
+index 0000000..0f4debb
+--- /dev/null
++++ b/src/db/order_export.ts
+@@ -0,0 +1,44 @@
++import { pool } from './client.js';
++import { formatCents } from '../api/money.js';
++
++export interface ExportRow {
++  externalRef: string;
++  customerName: string;
++  total: string;
++  status: string;
++}
++
++export async function exportOrders(customerId: number | null): Promise<ExportRow[]> {
++  const result = await pool.query(
++    `SELECT o.external_ref, c.name, o.total_cents, o.status
++       FROM orders o
++       JOIN customers c ON c.id = o.customer_id
++      WHERE ($1::int IS NULL OR o.customer_id = $1)
++      ORDER BY o.id`,
++    [customerId],
++  );
++  return result.rows.map((row) => ({
++    externalRef: row.external_ref,
++    customerName: row.name,
++    total: formatCents(Number(row.total_cents)),
++    status: row.status,
++  }));
++}
++
++export async function revenueCents(customerId: number): Promise<number> {
++  const result = await pool.query(
++    `SELECT COALESCE(SUM(total_cents), 0)::bigint AS revenue
++       FROM orders
++      WHERE customer_id = $1 AND status <> 'cancelled'`,
++    [customerId],
++  );
++  return Number(result.rows[0].revenue);
++}
++
++export function countByStatusLabel(rows: ExportRow[]): Record<string, number> {
++  const counts: Record<string, number> = {};
++  for (const row of rows) {
++    counts[row.status] = (counts[row.status] ?? 0) + 1;
++  }
++  return counts;
++}
+diff --git b/src/db/order_summary.ts b/src/db/order_summary.ts
+new file mode 100644
+index 0000000..1c17aac
+--- /dev/null
++++ b/src/db/order_summary.ts
+@@ -0,0 +1,45 @@
++import { pool } from './client.js';
++import { percentOf } from '../api/money.js';
++
++export interface CustomerSummary {
++  customerId: number;
++  orderCount: number;
++  paidCents: number;
++  discountCents: number;
++}
++
++export async function customerSummary(customerId: number, discountPercent: number): Promise<CustomerSummary> {
++  const result = await pool.query(
++    `SELECT COUNT(*)::int AS order_count,
++            COALESCE(SUM(total_cents) FILTER (WHERE status = 'paid'), 0)::bigint AS paid_cents
++       FROM orders
++      WHERE customer_id = $1`,
++    [customerId],
++  );
++  const row = result.rows[0];
++  const paidCents = Number(row.paid_cents);
++  return {
++    customerId,
++    orderCount: row.order_count,
++    paidCents,
++    discountCents: percentOf(paidCents, discountPercent),
++  };
++}
++
++export async function topCustomers(limit: number): Promise<CustomerSummary[]> {
++  const result = await pool.query(
++    `SELECT customer_id, COUNT(*)::int AS order_count,
++            COALESCE(SUM(total_cents) FILTER (WHERE status = 'paid'), 0)::bigint AS paid_cents
++       FROM orders
++      GROUP BY customer_id
++      ORDER BY paid_cents DESC
++      LIMIT $1`,
++    [limit],
++  );
++  return result.rows.map((row) => ({
++    customerId: row.customer_id,
++    orderCount: row.order_count,
++    paidCents: Number(row.paid_cents),
++    discountCents: 0,
++  }));
++}
+diff --git a/src/db/orders.ts b/src/db/orders.ts
+index 8d2465f..0109ffa 100644
+--- a/src/db/orders.ts
++++ b/src/db/orders.ts
+@@ -3,15 +3,15 @@ import type { Order } from '../types.js';
+ 
+ export async function findByRef(externalRef: string): Promise<Order | null> {
+   const result = await pool.query(
+-    'SELECT id, external_ref, customer_id, total, status FROM orders WHERE external_ref = $1',
++    'SELECT id, external_ref, customer_id, total_cents, status FROM orders WHERE external_ref = $1',
+     [externalRef],
+   );
+-  return result.rows[0] ?? null;
++  return result.rows.at(0) ?? null;
+ }
+ 
+ export async function listByCustomer(customerId: number): Promise<Order[]> {
+   const result = await pool.query(
+-    'SELECT id, external_ref, customer_id, total, status FROM orders WHERE customer_id = $1 ORDER BY id',
++    'SELECT id, external_ref, customer_id, total_cents, status FROM orders WHERE customer_id = $1 ORDER BY id',
+     [customerId],
+   );
+   return result.rows;
+@@ -19,7 +19,7 @@ export async function listByCustomer(customerId: number): Promise<Order[]> {
+ 
+ export async function markPaid(id: number): Promise<boolean> {
+   const result = await pool.query(
+-    "UPDATE orders SET status = 'paid' WHERE id = $1 AND status = 'pending'",
++    "UPDATE orders SET status = 'paid' WHERE id = $1 AND status = 'awaiting_payment'",
+     [id],
+   );
+   return result.rowCount === 1;
+diff --git a/src/types.ts b/src/types.ts
+index 722c071..db8b456 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -1,11 +1,11 @@
+-export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'cancelled';
++export type OrderStatus = 'awaiting_payment' | 'paid' | 'shipped' | 'cancelled';
+ 
+ export interface Order {
+   id: number;
+   external_ref: string;
+   customer_id: number;
+-  total: number;
+   status: OrderStatus;
++  total_cents: number;
+ }
+ 
+ export interface IncomingOrder {

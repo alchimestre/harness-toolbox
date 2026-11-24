@@ -1,0 +1,14 @@
+{
+  "defects": {
+    "stale boundary": "isFresh uses a strict less-than, so a request whose timestamp is exactly 300 seconds old gets 401, though the spec accepts at most 300 seconds.",
+    "credit rounding": "prorateCredit now calls Math.round on the signed value, so prorateCredit(501, 2, -1) returns -250 where the spec requires half away from zero, -251.",
+    "malformed before signature": "app.js parses the JSON body before the route runs and maps parse errors to 400, so a request with malformed JSON and a bad signature gets 400, not the 401 the spec requires.",
+    "mark before apply": "The route calls markProcessed before applyEvent, so an event whose effects throw is recorded as processed and is never retried.",
+    "redelivery id": "events.js redeliveryOf appends ':attempt' to the event id, so a redelivery is a new id to alreadyProcessed and its effects run a second time, though the spec says a redelivery keeps its original id."
+  },
+  "decoys": {
+    "decoy reordered multiply": "Writing the product as unusedDays * priceCents changes the rounding for large prices, because the product loses integer precision earlier.",
+    "decoy dedupe after signature": "Checking alreadyProcessed after the signature check means a duplicate with a bad signature is accepted as a duplicate.",
+    "decoy duplicate early return": "The early return for duplicates skips signature verification, so an unsigned duplicate delivery is accepted."
+  }
+}

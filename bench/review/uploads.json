@@ -1,0 +1,13 @@
+{
+  "defects": {
+    "traversal check before normalize": "resolveUpload checks startsWith(root) on the un-normalized path, then returns path.normalize(requested), so a name like ../../../etc/passwd passes the check and is written outside UPLOAD_ROOT.",
+    "label ReDoS": "LABEL_PATTERN in validators.js has a nested quantifier with an optional separator, so a 63-letter run followed by '!' has exponentially many ways to split and rejecting it takes effectively forever.",
+    "sort injection": "orderColumn in validators.js returns the raw sort value when it is not a key of SORT_COLUMNS, and listUploadsSql interpolates it into ORDER BY, so sort=created_at; DROP TABLE uploads runs as SQL.",
+    "SVG served inline": "mime.js lists image/svg+xml as inline-safe, so an uploaded SVG is served with inline disposition and its script runs in the app origin."
+  },
+  "decoys": {
+    "decoy filename star": "encodeURIComponent in the filename* parameter lets a crafted upload name break out of the Content-Disposition value or inject headers.",
+    "decoy sortDirection": "sortDirection returns the raw dir string when it is not asc, so a dir value containing SQL reaches the ORDER BY text.",
+    "decoy label check order": "The label check now runs before the try block, so a rejected label still reaches createUpload and is stored."
+  }
+}

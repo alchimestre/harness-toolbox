@@ -1,0 +1,9 @@
+{
+  "defects": {
+    "TTL units": "TTL is in seconds (600) but compared with a millisecond difference, so the cache expires after 600 ms instead of 10 minutes.",
+    "no in-flight dedup": "Concurrent getRate calls for the same currency all fetch; the spec allows at most one fetch in flight per currency.",
+    "forEach async": "totalEUR uses forEach with an async callback, so it returns before any line is added (returns 0).",
+    "per-line rounding": "Each line is rounded separately instead of rounding the total once, as the spec requires."
+  },
+  "decoys": {}
+}

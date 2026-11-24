@@ -1,0 +1,17 @@
+{
+  "defects": {
+    "fd per record": "WriteBatch opens the log file inside the loop and defers each Close to function return, so a batch holds one open descriptor per record until WriteBatch returns and a large batch can exhaust the process file limit.",
+    "attempt lost cancel": "attempt discards the cancel function of the timeout context, so the timer and context resources are not released when the attempt returns.",
+    "handler gets Background": "invoke passes context.Background to the handler instead of the timeout context, so the handler never sees JobTimeout and a slow handler is never cancelled.",
+    "backoff unit": "backoff converts BackoffMS to a time.Duration without multiplying by time.Millisecond, so the delay is BackoffMS nanoseconds instead of milliseconds.",
+    "backoff no cap": "backoff has no 30 second ceiling, so from the 16th failed attempt on the delay grows past 30 seconds, and a large BackoffMS overflows the shift.",
+    "retry bound off by one": "runOne retries while attempt is at most MaxAttempts, so a job with MaxAttempts 3 runs four times in total instead of three.",
+    "result log completion order": "Add appends records at completion under the lock, so with more than one worker the log lines are in completion order and not in lease order."
+  },
+  "decoys": {
+    "decoy errors.Is": "Replacing the == comparison with errors.Is on queue.ErrEmpty changes which lease errors end a worker, because errors.Is matches wrapped errors that == would miss.",
+    "decoy slices.Sorted": "Returning slices.Sorted(maps.Keys(...)) instead of a sorted slice built by hand changes FailedJobs for a nil map, which now returns a non-nil empty slice.",
+    "decoy range over int": "Replacing the worker loop index with range over r.opts.Workers starts one fewer goroutine when Workers is zero, so Run returns without waiting.",
+    "decoy reordered stats and log": "Moving the stats update above r.log.Add in runOne drops the record of every failed attempt, because the stats count reads the record that Add has not stored yet."
+  }
+}

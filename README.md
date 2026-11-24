@@ -22,9 +22,9 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | bench-runner | agent | `agents/bench-runner.md` | Runs a bench matrix through the repo's own run and score scripts in parallel. Waits out quota limits instead of switching models, discards runs answered by another model, regenerates the report page. |
 | git-chores | agent | `agents/git-chores.md` | Gitignore/exclude, untrack, prune worktrees and caches, commit, push. Refuses history rewrites, force pushes and `--no-verify` unless named in the assignment. |
 | role map | config | `config/roles.example.yml` | Model roles, agent overrides, fallback chains and compaction thresholds chosen from the bench results. Merge into `~/.omp/agent/config.yml`. |
-| review bench | bench | `bench/review/` | Runs `readonly-reviewer` on diffs with planted bugs; scores recall, cost, time per model and effort. |
+| review bench | bench | `bench/review/` | Runs `readonly-reviewer` on diffs with planted bugs and behavior-preserving decoys (`<case>.diff` + `<case>.json`); scores recall, decoys flagged, cost, time per model and effort. |
 | small-role bench | bench | `bench/small/` | Scores a tool-call fix, a commit subject, the bundled scout prompt, a multi-file spec fix with a decoy file, an exploration fix (bug copies reachable only by search, a frozen decoy, a lookalike that must stay) and a find-every-caller fix per model and effort. |
-| gate tuning | bench | `bench/skillopt/` | Trains jev-effort-gate's Jev questions with SkillOpt against recorded `bench/small` runs; `report.py` writes a live HTML report. |
+| gate tuning | bench | `bench/skillopt/` | Trains jev-effort-gate's Jev questions with SkillOpt against recorded `bench/small` runs; `report.py` writes a live HTML report. `train_review.py` trains the reviewer agents' prompt body against `bench/review` cases. |
 
 ## Install
 
@@ -80,12 +80,13 @@ bun run test
 Runs use `omp -p` with retries, model fallback, and the advisor off (`bench/overlay.yml`). They spend subscription quota. Each run takes 10–40 s.
 
 ```sh
-bench/review/run.sh <easy|hard|subtle> anthropic/claude-haiku-5-5:low <rep>
+bench/review/run.sh <case> anthropic/claude-haiku-5-5:low <rep> [agent|prompt-file]
 bench/small/run.sh <tools|commit|scout|task|explore|callers|expiry|guard> anthropic/claude-haiku-5-5:low <rep> [variant]
-python3 bench/review/score.py
+python3 bench/review/score.py [case ...]
 python3 bench/small/score.py
 TYPESAFE_API_KEY=... python3 bench/small/replay.py   # fixed effort vs jev-effort-gate vs shuffled control, from existing runs
 (cd bench/skillopt && ../.venv/bin/python train.py --config config.yaml)   # after: uv venv bench/.venv && uv pip install --python bench/.venv/bin/python -r bench/skillopt/requirements.txt
+(cd bench/skillopt && ../.venv/bin/python train_review.py --config review.yaml)   # reviewer prompt; reward = recall − 0.25 × decoys flagged
 ```
 
 Each scorer fails when a run was answered by a model other than the one requested.

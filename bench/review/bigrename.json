@@ -1,0 +1,14 @@
+{
+  "defects": {
+    "webhook backoff argument order": "webhooks.js still calls backoffFor(attempt, backoffBaseMs) while backoffFor now takes (baseMs, attempt), so webhook retry delays are computed from swapped arguments.",
+    "default base delay halved": "config.js changes backoffBaseMs from 500 to 250, so default retries use a 250 ms base instead of the 500 ms the spec requires.",
+    "stop does not await drain": "scheduler.stop() calls queue.drain() without await, so stop() closes the store while in-flight tasks are still running.",
+    "reports never removed": "TaskQueue.finish() returns early for kind 'report' and never calls removeTask, so finished report tasks stay in the store.",
+    "takeReady shadows now": "takeReady declares const now = now(), which throws a ReferenceError (now is in its temporal dead zone), so the queue crashes and no task ever runs."
+  },
+  "decoys": {
+    "decoy Math.pow": "Replacing Math.pow(2, attempt - 1) with the ** operator in backoff.js changes the retry delay for some attempts.",
+    "decoy object spread": "Replacing Object.assign({}, queue.stats, ...) with object spread in scheduler.stats() drops the waiting count from the returned stats.",
+    "decoy branch reorder": "Moving the retry check before the ok check in TaskQueue.execute() makes successful tasks retry, so finished tasks are never removed from the store."
+  }
+}

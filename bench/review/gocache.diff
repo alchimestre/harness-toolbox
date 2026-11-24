@@ -1,0 +1,200 @@
+Spec: "Adds KeysForTag with parent-tag lookup, snapshot Restore, and a concurrent WarmTenants, and moves Warm to a worker pool. Restore stops at the first entry it cannot load and returns that error. Warm returns the first loader error. The byte budget is max_memory_mb mebibytes for every value Validate accepts."
+
+diff --git a/src/app/app.go b/src/app/app.go
+index 1e77576..81bed18 100644
+--- a/src/app/app.go
++++ b/src/app/app.go
+@@ -21,13 +21,11 @@ func New(cfg config.Config) (*Service, error) {
+ 	if err := cfg.Validate(); err != nil {
+ 		return nil, err
+ 	}
+-	ttlSeconds := cfg.TTLSeconds
+-	if ttlSeconds > maxTTLSeconds {
+-		ttlSeconds = maxTTLSeconds
+-	}
++	ttlSeconds := min(cfg.TTLSeconds, maxTTLSeconds)
++	budget := int32(cfg.MaxMemoryMB) * 1024 * 1024
+ 	c := cache.New(cache.Options{
+ 		TTL:      time.Duration(ttlSeconds) * time.Second,
+-		MaxBytes: cfg.MaxMemoryMB * 1024 * 1024,
++		MaxBytes: int(budget),
+ 	})
+ 	return &Service{cache: c, cfg: cfg}, nil
+ }
+@@ -42,12 +40,19 @@ func (s *Service) Stats() int {
+ 	return s.cache.Len()
+ }
+ 
+-// WarmTenants warms each tenant's keys in turn and returns the first failure.
++// WarmTenants warms every tenant's keys concurrently and returns the first failure.
+ func (s *Service) WarmTenants(ctx context.Context, tenants map[string][]string, load cache.Loader) error {
++	errs := make(chan error, len(tenants))
+ 	for _, keys := range tenants {
+-		if err := s.cache.Warm(ctx, keys, s.cfg.WarmWorkers, load); err != nil {
+-			return err
++		go func() {
++			errs <- s.cache.Warm(ctx, keys, s.cfg.WarmWorkers, load)
++		}()
++	}
++	var first error
++	for range tenants {
++		if err := <-errs; err != nil && first == nil {
++			first = err
+ 		}
+ 	}
+-	return nil
++	return first
+ }
+diff --git a/src/cache/cache.go b/src/cache/cache.go
+index 9b4e841..bc0cc1d 100644
+--- a/src/cache/cache.go
++++ b/src/cache/cache.go
+@@ -1,6 +1,7 @@
+ package cache
+ 
+ import (
++	"strings"
+ 	"sync"
+ 	"time"
+ )
+@@ -42,7 +43,8 @@ func (c *Cache) Get(key string) ([]byte, bool) {
+ 	c.mu.RLock()
+ 	defer c.mu.RUnlock()
+ 	e, ok := c.entries[key]
+-	if !ok || !c.now().Before(e.expires) {
++	now := c.now()
++	if !ok || e.expires.Compare(now) <= 0 {
+ 		return nil, false
+ 	}
+ 	return e.value, true
+@@ -55,10 +57,10 @@ func (c *Cache) Set(key string, value []byte, tags ...string) {
+ 	c.removeLocked(key)
+ 	e := &entry{value: value, expires: c.now().Add(c.opts.TTL), tags: tags}
+ 	c.entries[key] = e
+-	c.used += len(value)
+ 	for _, tag := range tags {
+ 		c.tags[tag] = append(c.tags[tag], key)
+ 	}
++	c.used += len(value)
+ 	c.evictLocked()
+ }
+ 
+@@ -66,7 +68,9 @@ func (c *Cache) Set(key string, value []byte, tags ...string) {
+ func (c *Cache) Delete(key string) {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+-	c.removeLocked(key)
++	if _, ok := c.entries[key]; ok {
++		c.removeLocked(key)
++	}
+ }
+ 
+ // InvalidateTag removes every entry stored with tag and reports how many were removed.
+@@ -80,15 +84,17 @@ func (c *Cache) InvalidateTag(tag string) int {
+ 	return len(keys)
+ }
+ 
+-// KeysForTag returns the keys stored under tag.
++// KeysForTag returns the keys stored under tag and under its parent tag ("a/b" has parent "a").
+ func (c *Cache) KeysForTag(tag string) []string {
+ 	c.mu.RLock()
+ 	defer c.mu.RUnlock()
+-	return append([]string(nil), c.tags[tag]...)
++	own := c.tags[tag]
++	parent := c.tags[parentTag(tag)]
++	return append(own, parent...)
+ }
+ 
+ // Len returns the number of stored entries, including expired ones not yet evicted.
+-func (c *Cache) Len() int {
++func (c Cache) Len() int {
+ 	c.mu.RLock()
+ 	defer c.mu.RUnlock()
+ 	return len(c.entries)
+@@ -142,3 +148,11 @@ func removeString(list []string, target string) []string {
+ 	}
+ 	return kept
+ }
++
++func parentTag(tag string) string {
++	i := strings.LastIndexByte(tag, '/')
++	if i < 0 {
++		return ""
++	}
++	return tag[:i]
++}
+diff --git a/src/cache/persist.go b/src/cache/persist.go
+index d01035a..7ce5f07 100644
+--- a/src/cache/persist.go
++++ b/src/cache/persist.go
+@@ -39,7 +39,7 @@ func (c *Cache) Save(w io.Writer) error {
+ 
+ // Restore replaces the cache contents with the snapshot read from r. It stops at the first
+ // entry it cannot load and returns that error.
+-func (c *Cache) Restore(r io.Reader) (int, error) {
++func (c *Cache) Restore(r io.Reader) (loaded int, err error) {
+ 	var snap snapshot
+ 	if err := json.NewDecoder(r).Decode(&snap); err != nil {
+ 		return 0, err
+@@ -48,20 +48,25 @@ func (c *Cache) Restore(r io.Reader) (int, error) {
+ 		return 0, ErrSnapshotVersion
+ 	}
+ 	c.reset(len(snap.Entries))
+-	for i, se := range snap.Entries {
++	for _, se := range snap.Entries {
+ 		if err := c.load(se); err != nil {
+-			return i, err
++			break
+ 		}
++		loaded++
+ 	}
+-	return len(snap.Entries), nil
++	return loaded, err
+ }
+ 
+ func (c *Cache) reset(size int) {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
++	c.used = 0
++	if size == 0 {
++		c.entries, c.tags = nil, nil
++		return
++	}
+ 	c.entries = make(map[string]*entry, size)
+ 	c.tags = make(map[string][]string)
+-	c.used = 0
+ }
+ 
+ func (c *Cache) load(se snapshotEntry) error {
+diff --git a/src/cache/warm.go b/src/cache/warm.go
+index 56f8a70..7370f98 100644
+--- a/src/cache/warm.go
++++ b/src/cache/warm.go
+@@ -8,8 +8,8 @@ type Loader func(ctx context.Context, key string) ([]byte, error)
+ // Warm loads the missing keys with the given number of workers and returns the first loader error.
+ func (c *Cache) Warm(ctx context.Context, keys []string, workers int, load Loader) error {
+ 	jobs := make(chan string)
+-	results := make(chan error, len(keys))
+-	for i := 0; i < workers; i++ {
++	results := make(chan error)
++	for range workers {
+ 		go c.warmWorker(ctx, jobs, results, load)
+ 	}
+ 	go func() {
+@@ -18,13 +18,12 @@ func (c *Cache) Warm(ctx context.Context, keys []string, workers int, load Loade
+ 			jobs <- key
+ 		}
+ 	}()
+-	var first error
+ 	for range keys {
+-		if err := <-results; err != nil && first == nil {
+-			first = err
++		if err := <-results; err != nil {
++			return err
+ 		}
+ 	}
+-	return first
++	return nil
+ }
+ 
+ func (c *Cache) warmWorker(ctx context.Context, jobs <-chan string, results chan<- error, load Loader) {

@@ -1,0 +1,126 @@
+Spec: "Daily sales report: amounts are exact to the cent, timestamps without an offset are UTC, and each local day runs from its midnight to the next (23 or 25 hours on DST days). page_slice reports has_more for any page size, page_count rounds up, and summarize reports the event count and totals for any iterable, including a generator."
+
+diff --git a/src/salesreport/aggregate.py b/src/salesreport/aggregate.py
+index 07c4b1c..87fd4a5 100644
+--- a/src/salesreport/aggregate.py
++++ b/src/salesreport/aggregate.py
+@@ -1,4 +1,5 @@
+-from datetime import datetime, timedelta
++from datetime import UTC, datetime, timedelta
++from operator import itemgetter
+ 
+ from salesreport.money import format_cents
+ 
+@@ -9,7 +10,7 @@ def local_day(at, zone):
+ 
+ def day_bounds(day, zone):
+     start = datetime(day.year, day.month, day.day, tzinfo=zone)
+-    end = start + timedelta(days=1)
++    end = start.astimezone(UTC) + timedelta(days=1)
+     return start, end
+ 
+ 
+@@ -17,20 +18,19 @@ def daily_totals(events, zone):
+     totals = {}
+     for day in {local_day(event.at, zone) for event in events}:
+         start, end = day_bounds(day, zone)
+-        totals[day] = sum(event.cents for event in events if start <= event.at < end)
++        totals[day] = sum(event.cents for event in events if start <= event.at.astimezone(UTC) < end)
+     return totals
+ 
+ 
+ def ordered_totals(totals):
+-    pairs = sorted(totals.items(), key=lambda pair: pair[0])
++    pairs = sorted(totals.items(), key=itemgetter(0))
+     return [(day.isoformat(), format_cents(cents)) for day, cents in pairs]
+ 
+ 
+ def summarize(events, zone):
+-    events = list(events)
+     totals = daily_totals(events, zone)
+     return {
+         "days": ordered_totals(totals),
+-        "events": len(events),
++        "events": sum(1 for _ in events),
+         "total_cents": sum(totals.values()),
+     }
+diff --git a/src/salesreport/ingest.py b/src/salesreport/ingest.py
+index 8d89055..744ff35 100644
+--- a/src/salesreport/ingest.py
++++ b/src/salesreport/ingest.py
+@@ -1,13 +1,14 @@
+ import csv
+ from dataclasses import dataclass
+-from datetime import UTC, datetime
++from datetime import datetime
++from pathlib import Path
+ 
+ from salesreport.money import to_cents
+ 
+ REQUIRED_COLUMNS = ("store", "at", "amount")
+ 
+ 
+-@dataclass
++@dataclass(slots=True)
+ class Event:
+     store: str
+     at: datetime
+@@ -15,10 +16,7 @@ class Event:
+ 
+ 
+ def normalize_timestamp(raw):
+-    at = datetime.fromisoformat(raw.strip())
+-    if at.tzinfo is None:
+-        at = at.replace(tzinfo=UTC)
+-    return at
++    return datetime.fromisoformat(raw.strip())
+ 
+ 
+ def parse_event(row):
+@@ -39,5 +37,4 @@ def parse_rows(lines):
+ 
+ 
+ def load_lines(path):
+-    with open(path, encoding="utf-8", newline="") as handle:
+-        return handle.read().splitlines()
++    return Path(path).read_text(encoding="utf-8").splitlines()
+diff --git a/src/salesreport/money.py b/src/salesreport/money.py
+index fa8895d..a3c0de6 100644
+--- a/src/salesreport/money.py
++++ b/src/salesreport/money.py
+@@ -1,14 +1,8 @@
+-from decimal import ROUND_HALF_UP, Decimal
+-
+-CENT_SCALE = Decimal("100")
+-
+-
+ def to_cents(amount):
+-    scaled = Decimal(str(amount)) * CENT_SCALE
+-    return int(scaled.to_integral_value(rounding=ROUND_HALF_UP))
++    return int(amount * 100)
+ 
+ 
+ def format_cents(cents):
+-    sign = "-" if cents < 0 else ""
+     whole, fraction = divmod(abs(cents), 100)
+-    return f"{sign}{whole:,}.{fraction:02d}"
++    sign = "-" if cents < 0 else ""
++    return sign + f"{whole:,}.{fraction:02d}"
+diff --git a/src/salesreport/paginate.py b/src/salesreport/paginate.py
+index cb67ca0..ae345a1 100644
+--- a/src/salesreport/paginate.py
++++ b/src/salesreport/paginate.py
+@@ -1,9 +1,11 @@
+ def page_count(total, per_page):
+-    return -(-total // per_page)
++    return total // per_page
+ 
+ 
+ def page_slice(items, page, per_page):
++    if not items:
++        return [], False
+     start = (page - 1) * per_page
+     chunk = items[start:start + per_page]
+-    has_more = start + len(chunk) < len(items)
++    has_more = len(chunk) is per_page and start + per_page < len(items)
+     return chunk, has_more

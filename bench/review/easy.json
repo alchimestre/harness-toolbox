@@ -1,0 +1,8 @@
+{
+  "defects": {
+    "shell injection": "The name parameter is concatenated into an execSync shell command, allowing command injection.",
+    "path traversal": "Names containing ../ read files outside uploads/; the spec requires a 400.",
+    "uncaught crash": "execSync throws on a missing file (cat exits non-zero) and the exception is not handled, crashing or failing the request."
+  },
+  "decoys": {}
+}

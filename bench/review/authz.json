@@ -1,0 +1,14 @@
+{
+  "defects": {
+    "refresh window units": "refreshToken compares seconds since expiry with REFRESH_WINDOW_MS, which config.js defines in milliseconds, so tokens expired up to about 19 years ago are refreshed instead of 7 days.",
+    "invited members admitted": "findMembership in db.js does not filter on status, so requireMember admits a user whose membership is still 'invited' (the seeded p1/u3 row), though the spec requires an active membership.",
+    "members route unguarded": "app.js mounts memberRoutes before projectRoutes, so the router.param membership guard never runs for PATCH /projects/:projectId/members/:userId, letting any signed-in user change roles in any project.",
+    "list IDOR": "GET /projects reads userId from req.query before req.user.id, so any signed-in user can list another user's memberships.",
+    "protocol-relative redirect": "safeNextPath only checks startsWith('/'), so next=//evil.com passes and login redirects the browser to another site."
+  },
+  "decoys": {
+    "decoy readBearer prefix": "readBearer now returns the raw Authorization header when the Bearer prefix is missing, so a Basic credential reaches verifyToken.",
+    "decoy spread drops algorithms": "Spreading VERIFY_OPTIONS into REFRESH_VERIFY_OPTIONS drops the algorithms pin, so refreshToken accepts alg none tokens.",
+    "decoy signFor algorithm": "signFor no longer passes the HS256 algorithm, so refreshed and issued tokens are sent unsigned."
+  }
+}

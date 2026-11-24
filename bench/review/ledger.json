@@ -1,0 +1,24 @@
+{
+  "defects": {
+    "toCents truncates": "toCents uses Math.floor, so float prices like 19.99 become 1998 cents instead of 1999.",
+    "formatCents negative": "formatCents mangles negative amounts: -50 cents becomes '0.-50 EUR' (sign lost, minus inside the cents).",
+    "discount arguments swapped": "applyDiscount's parameters were swapped to (percent, cents) but orders.js still calls applyDiscount(subtotalCents, percent), producing wrong (even negative) totals.",
+    "stack cap uses max": "stackedPercent uses Math.max instead of Math.min, so every order gets at least a 50% discount.",
+    "reserve refuses last unit": "reserve's check is available <= qty, so ordering exactly the remaining stock is refused.",
+    "reserve returns null": "reserve now returns null instead of throwing OutOfStock, and orders.js only catches the exception, so out-of-stock orders proceed and get charged.",
+    "release no-op on Map": "release iterates Object.entries(reservation), but the reservation is a Map, so nothing is released after a failed payment.",
+    "free shipping at exactly 100": "Free shipping uses >= 10000, but the spec says strictly above 100.00 EUR.",
+    "free shipping field mismatch": "shippingCents reads order.subtotal, but orders.js passes discountedCents, so the free-shipping branch never fires.",
+    "retry skips an attempt": "retry's loop starts at attempt = 1, so it makes one fewer try (and tries: 1 makes no call and throws undefined).",
+    "retry option renamed": "retry's delayMs option became delaySeconds, but payments.js still passes delayMs: 2000, which is ignored, so the provider backoff drops to the 0.1 s default.",
+    "non-retryable retried": "retry no longer rethrows non-retryable errors, so failures such as declined charges are retried.",
+    "topSkus ascending": "topSkus now sorts ascending, returning the least sold SKUs instead of the top ones.",
+    "average of empty is NaN": "average dropped the empty-array guard, so it returns NaN instead of 0."
+  },
+  "decoys": {
+    "decoy isExpired": "isExpired's switch to comparing coupon.expires with today's ISO date string changes which coupons count as expired.",
+    "decoy splitEvenly": "splitEvenly's rewrite changes the shares it returns or how the remainder is distributed.",
+    "decoy shipping bands": "The shipping band lookup (Object.freeze, BANDS.find) changes the fee for some weight or the too-heavy error.",
+    "decoy dailyRevenue": "dailyRevenue's switch to a Map, ?? 0 and Object.fromEntries changes its result."
+  }
+}

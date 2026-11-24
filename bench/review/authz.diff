@@ -1,0 +1,166 @@
+Spec: "Sessions and project access: refresh reissues a token that expired at most 7 days ago after checking the signature; every project route requires an active membership; GET /projects lists only the caller's projects; login redirects only to paths on this site."
+
+diff --git a/src/auth/middleware.js b/src/auth/middleware.js
+index c0f5f92..7f4b16e 100644
+--- a/src/auth/middleware.js
++++ b/src/auth/middleware.js
+@@ -1,19 +1,26 @@
+ const { verifyToken, TokenError } = require('./tokens');
+ 
+-function bearerToken(req) {
+-  const header = req.get('Authorization') || '';
+-  return header.startsWith('Bearer ') ? header.slice('Bearer '.length) : null;
++const BEARER_PREFIX = 'Bearer ';
++
++function readBearer(req) {
++  const header = req.get('Authorization') ?? '';
++  if (!header.startsWith(BEARER_PREFIX)) return null;
++  return header.slice(BEARER_PREFIX.length);
++}
++
++function rejectInvalid(res) {
++  return res.status(401).json({ error: 'invalid token' });
+ }
+ 
+ function authenticate(req, res, next) {
+-  const token = bearerToken(req);
++  const token = readBearer(req);
+   if (!token) return res.status(401).json({ error: 'missing token' });
+   try {
+     const claims = verifyToken(token);
+     req.user = { id: claims.sub, role: claims.role };
+     return next();
+   } catch (error) {
+-    if (error instanceof TokenError) return res.status(401).json({ error: 'invalid token' });
++    if (error instanceof TokenError) return rejectInvalid(res);
+     return next(error);
+   }
+ }
+diff --git a/new/src/auth/redirect.js b/src/auth/redirect.js
+new file mode 100644
+index 0000000..f2862f6
+--- /dev/null
++++ b/src/auth/redirect.js
+@@ -0,0 +1,6 @@
++function safeNextPath(next) {
++  if (typeof next !== 'string' || !next.startsWith('/')) return '/';
++  return next;
++}
++
++module.exports = { safeNextPath };
+diff --git a/src/auth/tokens.js b/src/auth/tokens.js
+index 97753bb..7f7f531 100644
+--- a/src/auth/tokens.js
++++ b/src/auth/tokens.js
+@@ -1,23 +1,38 @@
+ const jwt = require('jsonwebtoken');
+-const { JWT_SECRET, ACCESS_TOKEN_TTL_SECONDS } = require('../config');
++const { JWT_SECRET, ACCESS_TOKEN_TTL_SECONDS, REFRESH_WINDOW_MS } = require('../config');
+ 
+ const ALGORITHM = 'HS256';
++const VERIFY_OPTIONS = { algorithms: [ALGORITHM] };
++const REFRESH_VERIFY_OPTIONS = { ...VERIFY_OPTIONS, ignoreExpiration: true };
++const SIGN_OPTIONS = { algorithm: ALGORITHM, expiresIn: ACCESS_TOKEN_TTL_SECONDS };
+ 
+ class TokenError extends Error {}
+ 
+-function issueToken(user) {
+-  return jwt.sign({ sub: user.id, role: user.role }, JWT_SECRET, {
+-    algorithm: ALGORITHM,
+-    expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+-  });
++function signFor(subjectId, role) {
++  return jwt.sign({ sub: subjectId, role }, JWT_SECRET, SIGN_OPTIONS);
+ }
+ 
+-function verifyToken(token) {
++function verifyWith(token, options) {
+   try {
+-    return jwt.verify(token, JWT_SECRET, { algorithms: [ALGORITHM] });
++    return jwt.verify(token, JWT_SECRET, options);
+   } catch (error) {
+     throw new TokenError(error.message);
+   }
+ }
+ 
+-module.exports = { issueToken, verifyToken, TokenError };
++function issueToken(user) {
++  return signFor(user.id, user.role);
++}
++
++function verifyToken(token) {
++  return verifyWith(token, VERIFY_OPTIONS);
++}
++
++function refreshToken(token) {
++  const claims = verifyWith(token, REFRESH_VERIFY_OPTIONS);
++  const secondsSinceExpiry = Math.floor(Date.now() / 1000) - claims.exp;
++  if (secondsSinceExpiry > REFRESH_WINDOW_MS) throw new TokenError('refresh window passed');
++  return signFor(claims.sub, claims.role);
++}
++
++module.exports = { issueToken, verifyToken, refreshToken, TokenError };
+diff --git a/src/routes/projects.js b/src/routes/projects.js
+index bc319d3..55c1303 100644
+--- a/src/routes/projects.js
++++ b/src/routes/projects.js
+@@ -1,14 +1,24 @@
+ const express = require('express');
+-const { listMembershipsFor } = require('../db');
++const { findMembership, listMembershipsFor } = require('../db');
+ 
+ const router = express.Router();
+ 
+-router.get('/', (req, res) => {
+-  res.json(listMembershipsFor(req.user.id));
++router.param('projectId', (req, res, next, projectId) => {
++  const membership = findMembership(projectId, req.user.id);
++  if (!membership) return res.status(403).json({ error: 'not a member' });
++  req.membership = membership;
++  return next();
+ });
+ 
++function listOwnProjects(req, res) {
++  const userId = req.query.userId ?? req.user.id;
++  res.json(listMembershipsFor(userId));
++}
++
++router.get('/', listOwnProjects);
++
+ router.get('/:projectId', (req, res) => {
+-  res.json({ id: req.params.projectId });
++  res.json({ id: req.params.projectId, role: req.membership.role });
+ });
+ 
+ module.exports = router;
+diff --git a/src/routes/session.js b/src/routes/session.js
+index bdf8983..a72899f 100644
+--- a/src/routes/session.js
++++ b/src/routes/session.js
+@@ -1,6 +1,7 @@
+ const express = require('express');
+ const { findUserByEmail, passwordMatches } = require('../db');
+-const { issueToken } = require('../auth/tokens');
++const { issueToken, refreshToken, TokenError } = require('../auth/tokens');
++const { safeNextPath } = require('../auth/redirect');
+ 
+ const router = express.Router();
+ 
+@@ -9,7 +10,17 @@ router.post('/', (req, res) => {
+   if (!user || !passwordMatches(user, req.body.password)) {
+     return res.status(401).json({ error: 'bad credentials' });
+   }
++  if (req.body.next !== undefined) return res.redirect(safeNextPath(req.body.next));
+   return res.json({ token: issueToken(user) });
+ });
+ 
++router.post('/refresh', (req, res) => {
++  try {
++    return res.json({ token: refreshToken(req.body.token) });
++  } catch (error) {
++    if (error instanceof TokenError) return res.status(401).json({ error: 'cannot refresh' });
++    throw error;
++  }
++});
++
+ module.exports = router;

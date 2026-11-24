@@ -1,0 +1,15 @@
+{
+  "defects": {
+    "up 0004 skips backfill": "Migration 0004 renames status 'pending' to 'awaiting_payment' without updating existing rows, so rows already stored as 'pending' keep an unknown status.",
+    "down 0004 order": "The down step of 0004 renames the status back before restoring the constraint that depends on the new name, so the rollback fails or leaves the table in a wrong state.",
+    "tier without default": "Migration 0005 adds customers.tier as NOT NULL without a default, so the ALTER fails on any table that already has rows.",
+    "unique index dropped": "Migration 0003 drops the unique index on orders.external_ref, so ingestOrder's ON CONFLICT (external_ref) clause no longer matches any constraint and inserts fail.",
+    "rollback truncates cents": "The down step of 0003 converts total_cents with integer division, so rolling back discards the cents of every order.",
+    "countPending silent zero": "countPending in db/reports.ts still filters on the old 'pending' status and returns 0 for orders now stored as 'awaiting_payment', without any error."
+  },
+  "decoys": {
+    "decoy rollback check spelling": "The rollback check in 0004 uses = ANY (ARRAY[...]) where the previous version used IN (...), so the rollback is now broken.",
+    "decoy rows.at": "findByRef uses rows.at(0) instead of rows[0], so it now returns undefined for an empty result and callers receive the wrong value.",
+    "decoy field order": "Moving status above total_cents in the Order type changes the JSON key order of responses, which breaks clients that depend on it."
+  }
+}

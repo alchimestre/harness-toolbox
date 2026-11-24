@@ -1,0 +1,9 @@
+{
+  "defects": {
+    "touching intervals not merged": "merge now uses start < last.end, so touching intervals such as [0,30) and [30,60) are no longer merged.",
+    "chunk drops trailing items": "chunk's new loop bound and tail condition drop trailing items (for example the last item of a 5-item list in chunks of 2).",
+    "ring shift keeps count": "Ring.shift no longer decrements count, so the ring's size and later pushes are wrong after a shift.",
+    "negative weekday index": "shiftWeekday dropped the + 7 normalization, so negative offsets index the array with a negative number and return undefined."
+  },
+  "decoys": {}
+}

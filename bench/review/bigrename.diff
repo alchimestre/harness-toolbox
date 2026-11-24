@@ -1,0 +1,303 @@
+Spec: "Rename the jobs module to tasks and tidy its API with no behavior change: finished tasks leave the store, stop() waits for in-flight work, and webhook retries keep their 500 ms base delay."
+
+diff --git a/src/api/routes.js b/src/api/routes.js
+index ffa2672..551cf75 100644
+--- a/src/api/routes.js
++++ b/src/api/routes.js
+@@ -35,16 +35,16 @@ async function route(req, res, { scheduler, webhooks }) {
+     if (problem) return sendJson(res, 400, { error: problem });
+     const handler = HANDLERS[body.kind];
+     if (!handler) return sendJson(res, 400, { error: `unknown kind ${body.kind}` });
+-    const job = { id: body.id, kind: body.kind, payload: body.payload, handler };
+-    const id = scheduler.enqueue(job, body.opts);
++    const task = { id: body.id, kind: body.kind, payload: body.payload, handler };
++    const id = scheduler.enqueue(task, body.opts?.delayMs);
+     return sendJson(res, 202, { id });
+   }
+   if (req.method === 'GET' && req.url === '/jobs') {
+     return sendJson(res, 200, scheduler.store.list());
+   }
+   if (req.method === 'DELETE' && req.url.startsWith('/jobs/')) {
+-    const jobId = req.url.slice('/jobs/'.length);
+-    scheduler.store.removeJob(jobId);
++    const taskId = req.url.slice('/jobs/'.length);
++    scheduler.store.removeTask(taskId);
+     return sendJson(res, 204, {});
+   }
+   if (req.method === 'POST' && req.url === '/hooks') {
+diff --git a/src/config.js b/src/config.js
+index 79693f6..ab8d63f 100644
+--- a/src/config.js
++++ b/src/config.js
+@@ -1,7 +1,7 @@
+ export const defaults = {
++  storeFile: 'jobs.json',
+   port: 8080,
+   concurrency: 4,
+   maxAttempts: 3,
+-  backoffBaseMs: 500,
+-  storeFile: 'jobs.json',
++  backoffBaseMs: 250,
+ };
+diff --git a/src/index.js b/src/index.js
+index 0e23894..541b1de 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -1,4 +1,4 @@
+-import { createScheduler } from './jobs/index.js';
++import { createScheduler } from './tasks/index.js';
+ import { startHttp } from './api/routes.js';
+ import { defaults } from './config.js';
+ 
+diff --git a/src/jobs/index.js a/src/jobs/index.js
+deleted file mode 100644
+index afcb5ee..0000000
+--- a/src/jobs/index.js
++++ /dev/null
+@@ -1,4 +0,0 @@
+-export { createScheduler } from './scheduler.js';
+-export { Queue } from './queue.js';
+-export { runJob } from './runner.js';
+-export { createStore } from './store.js';
+diff --git b/src/tasks/index.js b/src/tasks/index.js
+new file mode 100644
+index 0000000..656940f
+--- /dev/null
++++ b/src/tasks/index.js
+@@ -0,0 +1,5 @@
++export { createScheduler } from './scheduler.js';
++export { TaskQueue } from './queue.js';
++export { runTask } from './runner.js';
++export { createStore } from './store.js';
++export { summarize } from './summary.js';
+diff --git a/src/jobs/queue.js b/src/tasks/queue.js
+similarity index 59%
+rename from src/jobs/queue.js
+rename to src/tasks/queue.js
+index aa779aa..5470c86 100644
+--- a/src/jobs/queue.js
++++ b/src/tasks/queue.js
+@@ -1,7 +1,8 @@
+-import { runJob } from './runner.js';
++import { now } from '../util/clock.js';
++import { runTask } from './runner.js';
+ import { backoffFor } from '../util/backoff.js';
+ 
+-export class Queue {
++export class TaskQueue {
+   constructor({ concurrency, store, maxAttempts, backoffBaseMs }) {
+     this.concurrency = concurrency;
+     this.store = store;
+@@ -12,11 +13,11 @@ export class Queue {
+     this.stats = { done: 0, failed: 0 };
+   }
+ 
+-  push(job, { delayMs = 0 } = {}) {
+-    this.waiting.push({ job, attempt: 1, runAt: Date.now() + delayMs });
+-    this.store.saveJob(job);
++  enqueue(task, { delayMs = 0 } = {}) {
++    this.waiting.push({ task, attempt: 1, runAt: now() + delayMs });
++    this.store.saveTask(task);
+     setTimeout(() => this.pump(), delayMs);
+-    return job.id;
++    return task.id;
+   }
+ 
+   pump() {
+@@ -29,31 +30,32 @@ export class Queue {
+   }
+ 
+   takeReady() {
+-    const now = Date.now();
++    const now = now();
+     const index = this.waiting.findIndex((entry) => entry.runAt <= now);
+     if (index === -1) return null;
+     return this.waiting.splice(index, 1)[0];
+   }
+ 
+   async execute(entry) {
+-    const result = await runJob(entry.job);
++    const result = await runTask(entry.task);
+     this.running -= 1;
+-    if (result.ok) {
+-      this.stats.done += 1;
+-      this.finish(entry.job);
+-    } else if (result.retryable && entry.attempt < this.maxAttempts) {
+-      const delay = backoffFor(entry.attempt, this.backoffBaseMs);
+-      this.waiting.push({ job: entry.job, attempt: entry.attempt + 1, runAt: Date.now() + delay });
++    if (!result.ok && result.retryable && entry.attempt < this.maxAttempts) {
++      const delay = backoffFor(this.backoffBaseMs, entry.attempt);
++      this.waiting.push({ task: entry.task, attempt: entry.attempt + 1, runAt: now() + delay });
+       setTimeout(() => this.pump(), delay);
++    } else if (result.ok) {
++      this.stats.done += 1;
++      this.finish(entry.task);
+     } else {
+       this.stats.failed += 1;
+-      this.finish(entry.job);
++      this.finish(entry.task);
+     }
+     this.pump();
+   }
+ 
+-  finish(job) {
+-    this.store.removeJob(job.id);
++  finish(task) {
++    if (task.kind === 'report') return;
++    this.store.removeTask(task.id);
+   }
+ 
+   async drain() {
+diff --git a/src/jobs/runner.js b/src/tasks/runner.js
+similarity index 63%
+rename from src/jobs/runner.js
+rename to src/tasks/runner.js
+index d329b0a..0fa717b 100644
+--- a/src/jobs/runner.js
++++ b/src/tasks/runner.js
+@@ -1,6 +1,6 @@
+-export async function runJob(job) {
++export async function runTask(task) {
+   try {
+-    const value = await job.handler(job.payload);
++    const value = await task.handler(task.payload);
+     return { ok: true, value };
+   } catch (error) {
+     const retryable = error.retryable !== false;
+diff --git a/src/jobs/scheduler.js b/src/tasks/scheduler.js
+similarity index 62%
+rename from src/jobs/scheduler.js
+rename to src/tasks/scheduler.js
+index 53c9644..6b617f8 100644
+--- a/src/jobs/scheduler.js
++++ b/src/tasks/scheduler.js
+@@ -1,9 +1,9 @@
+-import { Queue } from './queue.js';
++import { TaskQueue } from './queue.js';
+ import { createStore } from './store.js';
+ 
+ export function createScheduler(config) {
+   const store = createStore(config.storeFile);
+-  const queue = new Queue({
++  const queue = new TaskQueue({
+     concurrency: config.concurrency,
+     store,
+     maxAttempts: config.maxAttempts,
+@@ -12,14 +12,14 @@ export function createScheduler(config) {
+   return {
+     store,
+     queue,
+-    enqueue(job, opts) {
+-      return queue.push(job, opts);
++    enqueue(task, delayMs) {
++      return queue.enqueue(task, { delayMs });
+     },
+     stats() {
+-      return Object.assign({}, queue.stats, { waiting: queue.waiting.length });
++      return { ...queue.stats, waiting: queue.waiting.length };
+     },
+     async stop() {
+-      await queue.drain();
++      queue.drain();
+       await store.close();
+     },
+   };
+diff --git a/src/jobs/store.js b/src/tasks/store.js
+similarity index 51%
+rename from src/jobs/store.js
+rename to src/tasks/store.js
+index 4fe9322..2c66cbf 100644
+--- a/src/jobs/store.js
++++ b/src/tasks/store.js
+@@ -1,7 +1,7 @@
+ import { writeFile } from 'node:fs/promises';
+ 
+ export function createStore(file) {
+-  const jobs = new Map();
++  const tasks = new Map();
+   let closed = false;
+ 
+   function assertOpen() {
+@@ -9,21 +9,20 @@ export function createStore(file) {
+   }
+ 
+   return {
+-    saveJob(job) {
++    saveTask(task) {
+       assertOpen();
+-      if (typeof job.id !== 'string') throw new Error('job id must be a string');
+-      jobs.set(job.id, job);
++      tasks.set(task.id, task);
+     },
+-    removeJob(id) {
++    removeTask(id) {
+       assertOpen();
+-      jobs.delete(id);
++      tasks.delete(id);
+     },
+     list() {
+-      return [...jobs.values()];
++      return [...tasks.values()];
+     },
+     async close() {
+       closed = true;
+-      await writeFile(file, JSON.stringify([...jobs.values()], null, 2));
++      await writeFile(file, JSON.stringify([...tasks.values()], null, 2));
+     },
+   };
+ }
+diff --git b/src/tasks/summary.js b/src/tasks/summary.js
+new file mode 100644
+index 0000000..9620290
+--- /dev/null
++++ b/src/tasks/summary.js
+@@ -0,0 +1,13 @@
++export function summarize(scheduler) {
++  const stats = scheduler.stats();
++  const outstanding = stats.waiting + scheduler.queue.running;
++  return { ...stats, outstanding, idle: outstanding === 0 };
++}
++
++export function countByKind(scheduler) {
++  const counts = {};
++  for (const task of scheduler.store.list()) {
++    counts[task.kind] = (counts[task.kind] ?? 0) + 1;
++  }
++  return counts;
++}
+diff --git a/src/util/backoff.js b/src/util/backoff.js
+index 2c44614..53d500d 100644
+--- a/src/util/backoff.js
++++ b/src/util/backoff.js
+@@ -1,3 +1,3 @@
+-export function backoffFor(attempt, baseMs) {
+-  return baseMs * Math.pow(2, attempt - 1);
++export function backoffFor(baseMs, attempt) {
++  return baseMs * 2 ** (attempt - 1);
+ }
+diff --git a/src/workers/email.js b/src/workers/email.js
+index 4e16eff..8194fd9 100644
+--- a/src/workers/email.js
++++ b/src/workers/email.js
+@@ -10,6 +10,6 @@ export async function emailHandler(payload) {
+ }
+ 
+ export function scheduleReminder(scheduler, payload, { delayMs = 60000 } = {}) {
+-  const job = { id: `reminder-${payload.to}`, kind: 'email', payload, handler: emailHandler };
+-  return scheduler.enqueue(job, { delayMs });
++  const task = { id: `reminder-${payload.to}`, kind: 'email', payload, handler: emailHandler };
++  return scheduler.enqueue(task, delayMs);
+ }
+diff --git a/src/workers/report.js b/src/workers/report.js
+index cc07ccf..bbe48b2 100644
+--- a/src/workers/report.js
++++ b/src/workers/report.js
+@@ -14,7 +14,7 @@ export async function fetchWithRetry(load, attempts = 3) {
+       return await load();
+     } catch (error) {
+       if (attempt >= attempts) throw error;
+-      await sleep(backoffFor(attempt, REPORT_BASE_MS));
++      await sleep(backoffFor(REPORT_BASE_MS, attempt));
+     }
+   }
+ }

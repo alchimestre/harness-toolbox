@@ -1,0 +1,16 @@
+{
+  "defects": {
+    "float_truncation": "to_cents uses int(amount * 100), so 0.29 becomes 28 cents and 19.99 becomes 1998 cents instead of rounding to the nearest cent.",
+    "floor_page_count": "page_count uses floor division, so 101 items at 50 per page gives 2 pages instead of 3.",
+    "identity_has_more": "page_slice compares len(chunk) with per_page using is, which is False for per_page 500, so has_more is False on a full first page of 1000 items.",
+    "generator_consumed": "summarize reads the events iterable once for the day totals and again for the count, so a generator yields events 0 and every day total 0.00.",
+    "naive_timestamp_local": "normalize_timestamp leaves timestamps without an offset naive, so their wall-clock time is read in the machine's local zone instead of UTC.",
+    "dst_day_end": "day_bounds ends each local day at its UTC start plus 24 hours, so on 2024-03-31 an event at 22:30 UTC (00:30 Paris on 2024-04-01) is counted in 2024-03-31."
+  },
+  "decoys": {
+    "decoy slots": "Adding slots=True to the Event dataclass makes Event instances unhashable, so they can no longer be used as dict keys or set members.",
+    "decoy read_text": "Switching load_lines from open with newline='' to Path.read_text leaves carriage returns from CRLF input in each line.",
+    "decoy itemgetter": "Changing ordered_totals to sort with key=itemgetter(0) orders the report by amount instead of by day.",
+    "decoy early return": "The new early return for an empty item list in page_slice makes has_more True for empty input, so an empty result asks for another page."
+  }
+}

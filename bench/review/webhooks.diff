@@ -1,0 +1,68 @@
+Spec: "Billing webhook receiver. A request is accepted only if its HMAC-SHA256 signature over timestamp.rawBody matches and the timestamp is at most 300 seconds old; a bad signature returns 401 even when the body is malformed JSON. Each event id is applied at most once, a redelivery keeps its original id, and an event whose effects throw is not recorded so it can be retried. Credit amounts are integer cents; a prorated credit rounds half away from zero, so prorateCredit(501, 2, -1) is -251."
+
+diff --git a/new/src/dedupe.js b/src/dedupe.js
+new file mode 100644
+index 0000000..057eeca
+--- /dev/null
++++ b/src/dedupe.js
+@@ -0,0 +1,11 @@
++const processed = new Set();
++
++function alreadyProcessed(eventId) {
++  return processed.has(eventId);
++}
++
++function markProcessed(eventId) {
++  processed.add(eventId);
++}
++
++module.exports = { alreadyProcessed, markProcessed };
+diff --git a/src/prorate.js b/src/prorate.js
+index cb3b8aa..1f9ca93 100644
+--- a/src/prorate.js
++++ b/src/prorate.js
+@@ -1,6 +1,5 @@
+ function prorateCredit(priceCents, periodDays, unusedDays) {
+-  const exactCents = (priceCents * unusedDays) / periodDays;
+-  return Math.sign(exactCents) * Math.round(Math.abs(exactCents));
++  return Math.round((unusedDays * priceCents) / periodDays);
+ }
+ 
+ module.exports = { prorateCredit };
+diff --git a/src/routes/webhook.js b/src/routes/webhook.js
+index fbe6a55..0d2ff63 100644
+--- a/src/routes/webhook.js
++++ b/src/routes/webhook.js
+@@ -2,18 +2,29 @@ const express = require('express');
+ const { sign, signaturesMatch } = require('../crypto');
+ const { WEBHOOK_SECRET, TOLERANCE_SECONDS, SIGNATURE_HEADER, TIMESTAMP_HEADER } = require('../config');
+ const { applyEvent } = require('../ledger');
++const { alreadyProcessed, markProcessed } = require('../dedupe');
+ 
+ const router = express.Router();
+ 
++function ageSecondsOf(timestamp) {
++  return Math.floor(Date.now() / 1000) - Number(timestamp);
++}
++
++function isFresh(ageSeconds) {
++  return ageSeconds < TOLERANCE_SECONDS;
++}
++
+ router.post('/billing', (req, res) => {
++  const event = req.body;
+   const timestamp = req.get(TIMESTAMP_HEADER);
+   const expected = sign(WEBHOOK_SECRET, timestamp, req.rawBody);
+   if (!signaturesMatch(expected, req.get(SIGNATURE_HEADER))) {
+     return res.status(401).json({ error: 'bad signature' });
+   }
+-  const ageSeconds = Math.floor(Date.now() / 1000) - Number(timestamp);
+-  if (ageSeconds > TOLERANCE_SECONDS) return res.status(401).json({ error: 'stale timestamp' });
+-  applyEvent(req.body);
++  if (!isFresh(ageSecondsOf(timestamp))) return res.status(401).json({ error: 'stale timestamp' });
++  if (alreadyProcessed(event.id)) return res.json({ received: true, duplicate: true });
++  markProcessed(event.id);
++  applyEvent(event);
+   return res.json({ received: true });
+ });
+ 

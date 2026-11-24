@@ -1,0 +1,14 @@
+{
+  "defects": {
+    "preview argument order": "preview_change still passes the old argument order to prorated_cents, whose signature is now (amount, at, period_start, period_end), so every preview reports zero credit and zero charge for a time inside the cycle.",
+    "banker's rounding": "prorated_cents uses round(), which sends exact half-cent amounts to the even cent, so 901 cents at mid-cycle yields 450 instead of 451.",
+    "shared audit default": "_audit's default details dict is created once and reused, so every audit entry that omits details shares one dict and shows the plan code of the latest call.",
+    "swallowed decline": "change_plan catches every exception from gateway.charge and still switches the plan, so a declined charge changes the plan anyway.",
+    "expire_stale mutates while iterating": "expire_stale deletes from the live dict view it iterates over, so any expiry raises RuntimeError instead of returning the expired ids."
+  },
+  "decoys": {
+    "decoy dataclass": "Converting Subscription to @dataclass(eq=False, repr=False) makes instances value-equal and unhashable, so they can no longer be used as set members or dict keys.",
+    "decoy attrgetter": "Replacing the sort lambda with attrgetter('price_cents') changes upgrade_options to sort plans by their code instead of by price.",
+    "decoy clamp": "Swapping the min and max in unused_fraction's clamp changes the proration fraction for periods that have not started yet, so amounts differ before the cycle begins."
+  }
+}

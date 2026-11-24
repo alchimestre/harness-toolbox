@@ -1,0 +1,94 @@
+Spec: "Ledger posting, per-account balances over a date range, interest accrual, and daily totals. Post is idempotent per ID and Balance includes from and excludes to. Split gives the remainder cents to the first parts, Accrue rounds half to even to the cent, and Daily keys are UTC calendar days."
+
+diff --git a/src/ledger/interest.go b/src/ledger/interest.go
+index f975197..bf115b4 100644
+--- a/src/ledger/interest.go
++++ b/src/ledger/interest.go
+@@ -1,18 +1,10 @@
+ package ledger
+ 
+-import (
+-	"math"
+-
+-	"example.com/goledger/src/money"
+-)
++import "example.com/goledger/src/money"
+ 
+ const basisPointsPerUnit = 10000
+ 
+ // Accrue returns the interest on balance for one period at bps basis points, rounded half to even to the cent.
+ func Accrue(balance money.Amount, bps int) money.Amount {
+-	if bps == 0 {
+-		return 0
+-	}
+-	exact := float64(balance) * float64(bps) / basisPointsPerUnit
+-	return money.Amount(math.RoundToEven(exact))
++	return money.Amount(balance) * money.Amount(bps) / basisPointsPerUnit
+ }
+diff --git a/src/ledger/ledger.go b/src/ledger/ledger.go
+index 4291f9a..038893f 100644
+--- a/src/ledger/ledger.go
++++ b/src/ledger/ledger.go
+@@ -23,11 +23,11 @@ func New() *Ledger {
+ func (l *Ledger) Post(e Entry) Entry {
+ 	l.mu.Lock()
+ 	defer l.mu.Unlock()
++	l.entries = append(l.entries, e)
+ 	if stored, ok := l.byID[e.ID]; ok {
+ 		return stored
+ 	}
+ 	l.byID[e.ID] = e
+-	l.entries = append(l.entries, e)
+ 	return e
+ }
+ 
+@@ -37,7 +37,7 @@ func (l *Ledger) Balance(account string, from, to time.Time) money.Amount {
+ 	defer l.mu.Unlock()
+ 	var sum money.Amount
+ 	for _, e := range l.entries {
+-		if e.Account == account && !e.Date.Before(from) && e.Date.Before(to) {
++		if !e.Date.Before(from) && !e.Date.After(to) && e.Account == account {
+ 			sum += e.Amount
+ 		}
+ 	}
+diff --git a/src/money/money.go b/src/money/money.go
+index 3ded3c0..09d9646 100644
+--- a/src/money/money.go
++++ b/src/money/money.go
+@@ -22,7 +22,7 @@ func Split(total Amount, n int) []Amount {
+ 	rem := total % Amount(n)
+ 	for i := range parts {
+ 		parts[i] = base
+-		if Amount(i) < rem {
++		if Amount(i) <= rem {
+ 			parts[i]++
+ 		}
+ 	}
+diff --git a/src/report/report.go b/src/report/report.go
+index 69c1d3e..381b449 100644
+--- a/src/report/report.go
++++ b/src/report/report.go
+@@ -11,8 +11,8 @@ import (
+ func Daily(entries []ledger.Entry) map[string]money.Amount {
+ 	days := make(map[string]money.Amount)
+ 	for _, e := range entries {
+-		day := e.Date.UTC().Format(time.DateOnly)
+-		days[day] += e.Amount
++		day := e.Date.Format(time.DateOnly)
++		days[day] = days[day] + e.Amount
+ 	}
+ 	return days
+ }
+diff --git a/src/report/statement.go b/src/report/statement.go
+index ba7665c..4073bb1 100644
+--- a/src/report/statement.go
++++ b/src/report/statement.go
+@@ -16,7 +16,7 @@ func Statement(entries []ledger.Entry, account string) string {
+ 		if e.Account != account {
+ 			continue
+ 		}
+-		total += e.Amount
++		total = total + e.Amount
+ 		fmt.Fprintf(&b, "%s %-12s %10s\n", e.Date.UTC().Format("2006-01-02"), e.ID, money.Format(e.Amount))
+ 	}
+ 	fmt.Fprintf(&b, "total %s\n", money.Format(total))

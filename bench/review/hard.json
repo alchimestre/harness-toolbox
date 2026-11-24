@@ -1,0 +1,9 @@
+{
+  "defects": {
+    "page offset": "OFFSET is page * 20 with pages starting at 1, so page 1 skips the first 20 invoices.",
+    "refund IDOR": "refund never checks that the invoice belongs to the signed-in user, so any user can refund anyone's invoice.",
+    "double refund race": "The refunded check and the UPDATE are not atomic, so concurrent requests can refund the same invoice twice.",
+    "timing-unsafe HMAC": "The signature is compared with != instead of a constant-time comparison (timing attack)."
+  },
+  "decoys": {}
+}

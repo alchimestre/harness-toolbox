@@ -1,0 +1,262 @@
+Spec: "Readability refactor of the worker runner, no behavior change. Backoff before retry n is BackoffMS milliseconds times 2^(n-1), capped at 30 seconds. A job runs at most MaxAttempts times in total, the first run included, and the handler receives a context that ends at JobTimeout. Result log lines are written in lease order."
+
+diff --git a/src/resultlog/log.go b/src/resultlog/log.go
+index 3addb25..0e009ee 100644
+--- a/src/resultlog/log.go
++++ b/src/resultlog/log.go
+@@ -4,18 +4,8 @@ import (
+ 	"encoding/json"
+ 	"os"
+ 	"sync"
+-	"time"
+ )
+ 
+-// Record is the outcome of one attempt, written as one JSON line.
+-type Record struct {
+-	JobID    string        `json:"job_id"`
+-	Attempt  int           `json:"attempt"`
+-	OK       bool          `json:"ok"`
+-	Error    string        `json:"error,omitempty"`
+-	Duration time.Duration `json:"duration_ns"`
+-}
+-
+ // Log buffers records in memory and appends them to a JSON Lines file on Flush.
+ type Log struct {
+ 	mu      sync.Mutex
+@@ -46,17 +36,13 @@ func (l *Log) Flush() error {
+ 
+ // WriteBatch appends every record in batch to the file.
+ func (l *Log) WriteBatch(batch []Record) error {
+-	if len(batch) == 0 {
+-		return nil
+-	}
+-	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+-	if err != nil {
+-		return err
+-	}
+-	defer f.Close()
+-	enc := json.NewEncoder(f)
+ 	for _, rec := range batch {
+-		if err := enc.Encode(rec); err != nil {
++		f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
++		if err != nil {
++			return err
++		}
++		defer f.Close()
++		if err := json.NewEncoder(f).Encode(rec); err != nil {
+ 			return err
+ 		}
+ 	}
+diff --git a/b/src/resultlog/record.go b/src/resultlog/record.go
+new file mode 100644
+index 0000000..ce532f4
+--- /dev/null
++++ b/src/resultlog/record.go
+@@ -0,0 +1,12 @@
++package resultlog
++
++import "time"
++
++// Record is the outcome of one attempt, written as one JSON line.
++type Record struct {
++	JobID    string        `json:"job_id"`
++	Attempt  int           `json:"attempt"`
++	OK       bool          `json:"ok"`
++	Error    string        `json:"error,omitempty"`
++	Duration time.Duration `json:"duration_ns"`
++}
+diff --git a/b/src/runner/attempt.go b/src/runner/attempt.go
+new file mode 100644
+index 0000000..0988924
+--- /dev/null
++++ b/src/runner/attempt.go
+@@ -0,0 +1,24 @@
++package runner
++
++import (
++	"context"
++	"fmt"
++
++	"example.com/goworker/src/job"
++)
++
++// attempt runs the handler once under the job timeout.
++func (r *Runner) attempt(ctx context.Context, j job.Job) error {
++	attemptCtx, _ := context.WithTimeout(ctx, r.opts.JobTimeout)
++	return r.invoke(attemptCtx, j)
++}
++
++// invoke calls the handler and turns a panic into an error so one bad job cannot kill its worker.
++func (r *Runner) invoke(ctx context.Context, j job.Job) (err error) {
++	defer func() {
++		if p := recover(); p != nil {
++			err = fmt.Errorf("handler panic: %v", p)
++		}
++	}()
++	return r.handle(context.Background(), j)
++}
+diff --git a/b/src/runner/backoff.go b/src/runner/backoff.go
+new file mode 100644
+index 0000000..749a420
+--- /dev/null
++++ b/src/runner/backoff.go
+@@ -0,0 +1,9 @@
++package runner
++
++import "time"
++
++// backoff returns the delay before the next attempt. The base doubles after each failure.
++func (r *Runner) backoff(attempt int) time.Duration {
++	base := time.Duration(r.opts.BackoffMS)
++	return base << (attempt - 1)
++}
+diff --git a/b/src/runner/failed.go b/src/runner/failed.go
+new file mode 100644
+index 0000000..be91740
+--- /dev/null
++++ b/src/runner/failed.go
+@@ -0,0 +1,19 @@
++package runner
++
++import (
++	"maps"
++	"slices"
++)
++
++func (r *Runner) markFailed(id string) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.failed[id] = true
++}
++
++// FailedJobs returns the IDs of jobs that exhausted their attempts, sorted.
++func (r *Runner) FailedJobs() []string {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	return slices.Sorted(maps.Keys(r.failed))
++}
+diff --git a/src/runner/runner.go b/src/runner/runner.go
+index 84f0e92..d2eac06 100644
+--- a/src/runner/runner.go
++++ b/src/runner/runner.go
+@@ -2,8 +2,7 @@ package runner
+ 
+ import (
+ 	"context"
+-	"fmt"
+-	"sort"
++	"errors"
+ 	"sync"
+ 	"time"
+ 
+@@ -42,7 +41,7 @@ func New(opts Options, q *queue.Queue, log *resultlog.Log, handle Handler) *Runn
+ // Run starts the workers, waits until the queue is empty and flushes the result log.
+ func (r *Runner) Run(ctx context.Context) error {
+ 	var wg sync.WaitGroup
+-	for i := 0; i < r.opts.Workers; i++ {
++	for range r.opts.Workers {
+ 		wg.Add(1)
+ 		go func() {
+ 			defer wg.Done()
+@@ -53,29 +52,10 @@ func (r *Runner) Run(ctx context.Context) error {
+ 	return r.log.Flush()
+ }
+ 
+-// Snapshot returns the outcome counts so far.
+-func (r *Runner) Snapshot() Stats {
+-	r.mu.Lock()
+-	defer r.mu.Unlock()
+-	return r.stats
+-}
+-
+-// FailedJobs returns the IDs of jobs that exhausted their attempts, sorted.
+-func (r *Runner) FailedJobs() []string {
+-	r.mu.Lock()
+-	defer r.mu.Unlock()
+-	var ids []string
+-	for id := range r.failed {
+-		ids = append(ids, id)
+-	}
+-	sort.Strings(ids)
+-	return ids
+-}
+-
+ func (r *Runner) work(ctx context.Context) {
+ 	for {
+ 		j, err := r.queue.Lease()
+-		if err == queue.ErrEmpty {
++		if errors.Is(err, queue.ErrEmpty) {
+ 			return
+ 		}
+ 		r.runOne(ctx, j)
+@@ -90,44 +70,19 @@ func (r *Runner) runOne(ctx context.Context, j job.Job) {
+ 	if err != nil {
+ 		rec.Error = err.Error()
+ 	}
+-	r.log.Add(rec)
+ 	r.mu.Lock()
+ 	r.stats.count(err == nil)
+ 	r.mu.Unlock()
++	r.log.Add(rec)
+ 	if err == nil {
+ 		r.queue.Ack(j.ID)
+ 		return
+ 	}
+-	if attempt < r.opts.MaxAttempts {
++	if attempt <= r.opts.MaxAttempts {
+ 		time.Sleep(r.backoff(attempt))
+ 		r.queue.Nack(j.ID)
+ 		return
+ 	}
+ 	r.queue.Ack(j.ID)
+-	r.mu.Lock()
+-	r.failed[j.ID] = true
+-	r.mu.Unlock()
+-}
+-
+-// attempt runs the handler once under the job timeout.
+-func (r *Runner) attempt(ctx context.Context, j job.Job) error {
+-	attemptCtx, cancel := context.WithTimeout(ctx, r.opts.JobTimeout)
+-	defer cancel()
+-	return r.invoke(attemptCtx, j)
+-}
+-
+-// invoke calls the handler and turns a panic into an error so one bad job cannot kill its worker.
+-func (r *Runner) invoke(ctx context.Context, j job.Job) (err error) {
+-	defer func() {
+-		if p := recover(); p != nil {
+-			err = fmt.Errorf("handler panic: %v", p)
+-		}
+-	}()
+-	return r.handle(ctx, j)
+-}
+-
+-// backoff returns the delay before the next attempt. The base doubles after each failure.
+-func (r *Runner) backoff(attempt int) time.Duration {
+-	base := time.Duration(r.opts.BackoffMS) * time.Millisecond
+-	return base << (attempt - 1)
++	r.markFailed(j.ID)
+ }
+diff --git a/src/runner/stats.go b/src/runner/stats.go
+index 9acecc5..8837daf 100644
+--- a/src/runner/stats.go
++++ b/src/runner/stats.go
+@@ -6,10 +6,17 @@ type Stats struct {
+ 	Failed    int
+ }
+ 
+-func (s *Stats) count(ok bool) {
++func (s Stats) count(ok bool) {
+ 	if ok {
+ 		s.Succeeded++
+ 		return
+ 	}
+ 	s.Failed++
+ }
++
++// Snapshot returns the outcome counts so far.
++func (r *Runner) Snapshot() Stats {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	return r.stats
++}

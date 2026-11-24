@@ -1,0 +1,14 @@
+{
+  "defects": {
+    "attempt_off_by_one": "reschedule checks max_attempts before counting the run, so a job with max_attempts 3 that keeps raising RetryableError runs 4 times before it fails.",
+    "shared_default_tags": "enqueue's tags=[] default is one list shared by every job that omits tags, so a retry tags other jobs too, including jobs that never retried.",
+    "naive_utc_clock": "current_epoch strips the UTC tzinfo before converting, so the UTC wall time is read as local time and the epoch is off by the machine's UTC offset (3600 seconds in Paris).",
+    "strict_due_bound": "is_due compares with <, so a job whose run time equals the current time is skipped on this pass even though the spec counts it as due.",
+    "late_bound_reports": "report_thunks builds lambdas that read the loop variable job at call time, so every notifier reports the last job in the batch."
+  },
+  "decoys": {
+    "decoy retry_delay": "Inverting the test in retry_delay and swapping its branches sends the first retry back to the base delay instead of the doubled delay.",
+    "decoy journal path": "Changing record from open() to Path(JOURNAL_PATH).open() replaces the journal's append mode with overwrite, so each finished job erases the journal.",
+    "decoy finish order": "Swapping the last_error and status assignments in finish stores a finished job with a stale error, because the error is written after the status."
+  }
+}

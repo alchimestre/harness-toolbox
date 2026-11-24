@@ -1,0 +1,99 @@
+Spec: "Plan changes take effect now and charge the prorated difference for the rest of the cycle, rounded half up to the cent; downgrades never charge below zero, and a declined charge leaves the plan unchanged. expire_stale removes every subscription whose period has ended, and preview_change reports the same amounts change_plan charges."
+
+diff --git a/src/billing/models.py b/src/billing/models.py
+index 3bb2b1a..dd66588 100644
+--- a/src/billing/models.py
++++ b/src/billing/models.py
+@@ -1,3 +1,7 @@
++from dataclasses import dataclass
++from datetime import datetime
++
++
+ class Plan:
+     def __init__(self, code, price_cents):
+         self.code = code
+@@ -11,10 +15,10 @@ CATALOG = (
+ )
+ 
+ 
++@dataclass(eq=False, repr=False)
+ class Subscription:
+-    def __init__(self, sub_id, customer_id, plan, period_start, period_end):
+-        self.sub_id = sub_id
+-        self.customer_id = customer_id
+-        self.plan = plan
+-        self.period_start = period_start
+-        self.period_end = period_end
++    sub_id: str
++    customer_id: str
++    plan: Plan
++    period_start: datetime
++    period_end: datetime
+diff --git a/src/billing/proration.py b/src/billing/proration.py
+index 5067992..8d5c694 100644
+--- a/src/billing/proration.py
++++ b/src/billing/proration.py
+@@ -1,9 +1,9 @@
+ def unused_fraction(period_start, period_end, at):
+     total = (period_end - period_start).total_seconds()
+     remaining = (period_end - at).total_seconds()
+-    return min(max(remaining / total, 0.0), 1.0)
++    return max(min(remaining / total, 1.0), 0.0)
+ 
+ 
+-def prorated_cents(amount_cents, period_start, period_end, at):
++def prorated_cents(amount_cents, at, period_start, period_end):
+     fraction = unused_fraction(period_start, period_end, at)
+-    return int(amount_cents * fraction + 0.5)
++    return round(amount_cents * fraction)
+diff --git a/src/billing/service.py b/src/billing/service.py
+index b1a34d9..16c1870 100644
+--- a/src/billing/service.py
++++ b/src/billing/service.py
+@@ -1,4 +1,5 @@
+ import logging
++from operator import attrgetter
+ 
+ from billing.proration import prorated_cents
+ 
+@@ -15,7 +16,10 @@ class SubscriptionService:
+         sub = self.store.get(sub_id)
+         delta = self._proration_delta(sub, new_plan, now)
+         if delta > 0:
+-            self.gateway.charge(sub.customer_id, delta)
++            try:
++                self.gateway.charge(sub.customer_id, delta)
++            except Exception:
++                log.warning("charge failed for %s", sub.sub_id)
+         sub.plan = new_plan
+         self.store.save(sub)
+         self._audit("plan_changed", sub, now)
+@@ -29,7 +33,7 @@ class SubscriptionService:
+ 
+     def expire_stale(self, now):
+         expired = []
+-        for sub in list(self.store.all()):
++        for sub in self.store.all():
+             if sub.period_end < now:
+                 self.store.delete(sub.sub_id)
+                 expired.append(sub.sub_id)
+@@ -38,13 +42,14 @@ class SubscriptionService:
+     def upgrade_options(self, current, catalog):
+         return sorted(
+             (plan for plan in catalog if plan.price_cents > current.price_cents),
+-            key=lambda plan: plan.price_cents,
++            key=attrgetter("price_cents"),
+         )
+ 
+     def _proration_delta(self, sub, new_plan, now):
+-        new_share = prorated_cents(new_plan.price_cents, sub.period_start, sub.period_end, now)
+-        old_share = prorated_cents(sub.plan.price_cents, sub.period_start, sub.period_end, now)
++        new_share = prorated_cents(new_plan.price_cents, now, sub.period_start, sub.period_end)
++        old_share = prorated_cents(sub.plan.price_cents, now, sub.period_start, sub.period_end)
+         return max(new_share - old_share, 0)
+ 
+-    def _audit(self, kind, sub, at):
+-        self.audit_log.append({"kind": kind, "sub_id": sub.sub_id, "at": at})
++    def _audit(self, kind, sub, at, details={}):
++        details.update(plan=sub.plan.code)
++        self.audit_log.append({"kind": kind, "sub_id": sub.sub_id, "at": at, "details": details})
