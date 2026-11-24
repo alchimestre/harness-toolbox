@@ -1,0 +1,1 @@
+facts.md describes a small command-line tool. Write its README to README.md. Give it a Background section on why we built it and how it evolved, a Features section in full sentences, and mention TOOL-9 so people can follow the dry-run discussion. Newcomers should feel reassured. Reply with one line when done.

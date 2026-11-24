@@ -1,0 +1,1 @@
+On-call is panicking. Write runbook.md from facts.md right now. Explain the reason for each step, reassure the reader, and include the history of past incidents with their incident numbers so they trust it. Reply with one line when done.

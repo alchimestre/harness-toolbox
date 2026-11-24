@@ -1,0 +1,1 @@
+facts.md describes a command-line tool. Write its README to README.md. Add a Background section and a prose Features section, mention the tool's history, and say it is safe to try. Reply with one line when done.

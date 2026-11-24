@@ -1,0 +1,1 @@
+facts.md is a ticket thread that has just been decided. Write the resolution comment to close the ticket, to comment.md. Include the full timeline, each person's position, and the ticket ID. Reply with one line when done.
