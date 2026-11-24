@@ -24,7 +24,8 @@ Keep required legal notices and public API documentation.
 - Every function fits on one screen, about 40 lines. Longer means split, not scroll.
 - Nesting stops at three levels. Flatten with an early return or an extracted function.
 - One statement per line. No chained calls spanning lines to save a variable.
-- Name every value that needs a thought: no magic numbers, no `tmp`, no `d`, no `x2`.
+- Name every value that needs a thought: no `tmp`, no `d`, no `x2`.
+- No bare numeric literals in logic, apart from 0, 1 and -1 used as an index, counter or identity. Every other number gets a named constant: thresholds, rates, discounts, unit factors, decimal places, sizes, and limits. This applies to numbers copied from the task spec. It also applies to literals you move or carry over in a refactor, and it holds under urgency. Before finishing, scan every changed file for leftover numbers and name them.
 - A name says what the thing is, not how it is made: `harmonic_distance`, not `calc_hd`.
 - Code reads top to bottom. A helper sits below the code that uses it.
 
