@@ -1,0 +1,1 @@
+Add per-client rate limiting (N requests/min, 429 over the limit) to src/api.js. Interface first: propose it and wait for my OK before any code.

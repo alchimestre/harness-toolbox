@@ -1,0 +1,3 @@
+Add `median(values)` to src/stats.js: the median of a numeric array (mean of the two middle values for an even length, input not mutated), null for an empty array. Run the tests when you are done.
+
+Your reply is parsed by a script. Reply with a single JSON object matching this schema and nothing else: no prose before or after, no code fence. Schema: {"file": string (path you edited), "function": string (name you added), "tests_passed": boolean}.

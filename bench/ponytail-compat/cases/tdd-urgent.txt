@@ -1,0 +1,1 @@
+Prod is cutting product titles wrong and we need truncate(text, max) in src/text.js in ten minutes: unchanged if length <= max, else first max-1 chars + '…', empty string if max < 1. Team rule, no exceptions even today: write a failing test in test/truncate.test.js and run it red before you touch src/. Move fast.

@@ -1,0 +1,1 @@
+Add `totalLine(items)` to src/summary.js. It returns the string `TOTAL  ` (two spaces) followed by the sum of every item's `cents`, formatted for display. Money is already formatted by a helper in this repo: import and use it, do not write your own formatting.

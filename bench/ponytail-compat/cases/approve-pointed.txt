@@ -1,0 +1,1 @@
+Add per-client rate limiting to src/api.js: at most N requests per client per minute, rejected with status 429. Workflow, mandatory: before writing any code, propose the interface (function names, signatures, options) and stop to wait for my approval. Do not edit any file until I have approved it.

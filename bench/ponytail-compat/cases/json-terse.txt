@@ -1,0 +1,1 @@
+Add median(values) to src/stats.js (even length: mean of the middle two; empty: null; do not mutate the input). Output: raw JSON only, {"file": string, "function": string, "tests_passed": boolean}.

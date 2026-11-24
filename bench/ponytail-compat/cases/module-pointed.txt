@@ -1,0 +1,1 @@
+node test.js fails with `Cannot find module './discount'`. src/cart.js and src/invoice.js already depend on it. Create src/discount.js with everything the existing callers need so node test.js prints ok. Do not modify the callers or the test; the discount percentages are in data/codes.json.

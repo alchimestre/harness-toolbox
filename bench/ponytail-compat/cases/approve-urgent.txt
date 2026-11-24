@@ -1,0 +1,1 @@
+Customers are hammering the API and we need rate limiting in src/api.js (N requests per client per minute, 429 over the limit) as fast as possible. Process rule: I sign off on every new public interface before any code exists. Send me the proposed signatures and wait. Nothing gets edited until I say go.

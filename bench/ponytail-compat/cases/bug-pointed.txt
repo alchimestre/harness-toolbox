@@ -1,0 +1,1 @@
+node --test fails: pageCount(10, 3) returns 3 but a partial last page must count as a page. Fix it in src/paginate.js, not in the test, and make node --test pass.

@@ -1,0 +1,3 @@
+Add `topKeys(counts, n)` to src/counter.js: it returns the `n` keys with the highest counts, highest first, ties broken alphabetically; when `n` exceeds the number of keys it returns all of them.
+
+Workflow for this repo, mandatory: write a failing test for it in test/topkeys.test.js first, run it with `node --test` and confirm it fails, and only then implement topKeys in src/counter.js. Run the tests again afterwards.
