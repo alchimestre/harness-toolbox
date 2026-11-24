@@ -1,7 +1,9 @@
 // Wires each extension against a fake harness API. Run: bun test/wiring.ts
 
 import { mock } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
 
+import readonlyLsp, { READONLY_AGENTS } from "../extensions/readonly-lsp.ts";
 import searchGuard from "../extensions/search-guard.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
@@ -135,6 +137,33 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 
 	handlers["retry_fallback_applied"]({}, harness("anthropic/claude-opus-5-5"));
 	check(overrides.at(-1)?.advisor === "openai-codex/gpt-6.2-sol:high", "main-session fallback applies the override");
+}
+
+// --- readonly-lsp ---------------------------------------------------------
+{
+	const { pi, handlers } = fakePi();
+	readonlyLsp(pi as never);
+	const lsp = (action: unknown, name: string) =>
+		handlers["tool_call"]({ toolName: "lsp", input: { action } }, { agent: { kind: "sub", name } }) as
+			| { block?: boolean; reason?: string }
+			| undefined;
+
+	check(lsp("references", "review-low") === undefined, "reviewer lsp lookup allowed");
+	for (const action of ["rename", "rename_file", "code_actions", "request", "reload", "constructor", undefined]) {
+		check(lsp(action, "review-low")?.block === true, `reviewer lsp ${action} blocked`);
+	}
+	check(/read-only/.test(lsp("rename", "review-high")?.reason ?? ""), "block names the read-only rule");
+	check(lsp("rename", "task") === undefined, "other agents keep lsp rename");
+	check(handlers["tool_call"]({ toolName: "lsp", input: { action: "rename" } }, { agent: { kind: "main" } }) === undefined, "main session keeps lsp rename");
+
+	const WRITING_TOOLS = ["edit", "write", "bash"];
+	for (const file of readdirSync("agents")) {
+		const frontmatter = readFileSync(`agents/${file}`, "utf8").split(/^---$/m)[1];
+		const tools = (/^tools: (.*)$/m.exec(frontmatter)?.[1] ?? "").split(/,\s*/);
+		const name = /^name: (.*)$/m.exec(frontmatter)?.[1] ?? "";
+		const lookupOnly = tools.includes("lsp") && !WRITING_TOOLS.some((tool) => tools.includes(tool));
+		check(lookupOnly === Object.hasOwn(READONLY_AGENTS, name), `${name}: guard list matches its tool list`);
+	}
 }
 
 console.log("\nall wiring checks passed");

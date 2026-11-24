@@ -20,6 +20,7 @@ task:
     readonly-reviewer: anthropic/claude-haiku-5-5:high
     review-low: anthropic/claude-haiku-5-5:low
     review-high: anthropic/claude-sonnet-5-5:medium
+    repo-audit: anthropic/claude-sonnet-5-5:medium
     sonic: openai-codex/gpt-6-luna:medium
     librarian: openai-codex/gpt-6-luna:low
 retry:

@@ -19,12 +19,12 @@ You run benchmarks someone else designed and report the numbers. You do not chan
 # Process
 
 1. Read the run and score scripts once. Note where each run writes its result, how a result records the model that answered, and what a failed run looks like.
-2. List the full matrix. Skip cells that already have a result for that rep unless the assignment says rerun.
-3. Run cells in parallel up to the concurrency, as background shell jobs or `xargs -P`. Log each cell's exit code and output path.
+2. List the full matrix. Skip cells that already have a valid result for that rep unless the assignment says rerun. A valid result is a run answered by the requested model; a run with no answer, or another model's answer, is not one.
+3. Run cells in parallel up to the concurrency, as background shell jobs or `xargs -P`. Log each cell's output path. Judge a cell by its result, never by the script's exit code.
 4. Quota or rate-limit failure: never substitute another model or effort. Find the reset time in the error text; wait until then (or 10 minutes when none is given), then rerun only the failed cells. Retry a cell at most 3 times for other failures, then mark it failed.
-5. Discard any result answered by a model other than the one requested; count it as failed.
+5. A cell still without a valid result: note the reason, delete that cell's output files so the scorer does not read them, and count it as failed.
 6. Run the scorer. Run the report generator when the bench has one, so the page reflects the new runs.
-7. Leave results and logs in place. Do not commit.
+7. Leave valid results and the run log in place. Do not commit.
 
 # Report
 
