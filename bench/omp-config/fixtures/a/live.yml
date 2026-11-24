@@ -1,0 +1,47 @@
+# Local settings
+symbolPreset: nerd
+theme:
+  dark: titanium
+modelRoles:
+  default: anthropic/claude-sonnet-5-5
+  slow: anthropic/claude-opus-5-5:high
+  plan: anthropic/claude-opus-5-5:medium
+  task: anthropic/claude-haiku-5-5:high
+  smol: anthropic/claude-haiku-5-5:low
+  commit: anthropic/claude-haiku-5-5:low
+  tiny: anthropic/claude-haiku-5-5:off
+  designer: anthropic/claude-sonnet-5-5:medium
+  vision: openai-codex/gpt-5.6-terra:medium
+  advisor: openai-codex/gpt-6.2-sol:medium
+  judge: anthropic/claude-haiku-5-5:medium
+defaultThinkingLevel: auto
+task:
+  enableEffort: false
+  maxConcurrency: 8
+  isolation:
+    enabled: true
+  agentModelOverrides:
+    scout: anthropic/claude-sonnet-5-5:low
+    sonic: openai-codex/gpt-6-luna:medium
+    librarian: openai-codex/gpt-6-luna:low
+    reviewer: anthropic/claude-haiku-5-5:high
+    review-low: anthropic/claude-haiku-5-5:low
+    task-fast: anthropic/claude-sonnet-5-5:high
+    triage: anthropic/claude-haiku-5-5:low
+retry:
+  usageReservePct: 15
+  fallbackChains:
+    default:
+      - openai-codex/gpt-6.2-sol
+    task:
+      - openai-codex/gpt-6.2-sol
+    smol:
+      - openai-codex/gpt-6-luna
+      - anthropic/claude-sonnet-5-5
+compaction:
+  modelThresholds:
+    # Haiku's window is 100k
+    anthropic/claude-haiku-5-5: f80000
+    anthropic/claude-sonnet-5-5: f250000
+statusLine:
+  preset: custom

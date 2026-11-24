@@ -1,0 +1,8 @@
+# Build box
+task:
+  maxConcurrency: 16
+  isolation:
+    enabled: false
+retry:
+  enabled: true
+  maxRetries: 5

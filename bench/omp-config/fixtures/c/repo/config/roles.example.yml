@@ -1,0 +1,6 @@
+# Tracked defaults for the build box
+task:
+  # Parallel agent cap; the live config may override it
+  maxConcurrency: 8
+retry:
+  maxRetries: 10

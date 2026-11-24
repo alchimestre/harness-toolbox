@@ -1,0 +1,7 @@
+modelRoles:
+  default: anthropic/claude-sonnet-5-5:medium
+  commit: anthropic/claude-haiku-5-5:low
+  task: anthropic/claude-haiku-5-5:high
+  vision: openai-codex/gpt-5.6-terra:medium
+statusLine:
+  preset: minimal

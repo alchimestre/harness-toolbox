@@ -1,0 +1,13 @@
+# Work laptop
+symbolPreset: ascii
+modelRoles:
+  default: anthropic/claude-opus-5-5:high
+  slow: anthropic/claude-opus-5-5:high
+  task: anthropic/claude-sonnet-5-5:medium
+  commit: anthropic/claude-haiku-5-5:low
+  vision: openai-codex/gpt-5.6-terra:low
+compaction:
+  enabled: true
+  thresholdTokens: 120000
+statusLine:
+  preset: minimal
