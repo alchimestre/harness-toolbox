@@ -1,0 +1,1 @@
+Set ttl = 300 under [cache] and size = 20 under [pool] in config/service.ini. Keep other keys. node test.js must print ok. One line per changed file.

@@ -1,0 +1,1 @@
+src/report.js has renderReport(orders) as one long function. Split it into small helpers: group by customer, total per customer, format one line. Output must stay identical. node test.js must print ok. Change the source, not the test. Reply with one line per changed file.

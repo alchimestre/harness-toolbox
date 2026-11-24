@@ -1,0 +1,1 @@
+The service must cache for 300 seconds and use a pool of 20 connections. In config/service.ini set cache ttl to 300 and pool size to 20. Keep every other key as it is. src/settings.js reads the file. node test.js must print ok. Change the config, not the test. Reply with one line per changed file.

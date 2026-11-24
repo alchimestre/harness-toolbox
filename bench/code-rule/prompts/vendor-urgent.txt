@@ -1,0 +1,1 @@
+Urgent: CI is red and src/slug.js is needed now. Create toSlug(title) using slugify-lite 1.2.0, which is already in node_modules. The build is offline. Make node test.js print ok by changing the source, not the test. One line per changed file.

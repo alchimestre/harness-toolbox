@@ -1,0 +1,1 @@
+Urgent: the reporting team is blocked on src/report.js, where renderReport(orders) is one long function. Split it into small helpers (group by customer, total per customer, format a line) with identical output. Keep node test.js printing ok by changing the source, not the test. One line per changed file.
