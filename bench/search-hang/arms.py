@@ -44,7 +44,10 @@ def result_path(out: Path, arm: str, case_id: str, rep: int) -> Path:
 def read_valid(result: Path) -> dict | None:
     if not result.exists():
         return None
-    report = json.loads(result.read_text())
+    try:
+        report = json.loads(result.read_text())
+    except json.JSONDecodeError:
+        return None
     return report if report.get("responders") == [RESPONDER] else None
 
 
@@ -66,6 +69,7 @@ def run_cell(job: tuple[Path, str, Path, str, int]) -> tuple[str, str, int, bool
         )
         if proc.returncode == 0 and read_valid(result) is not None:
             return arm, case_id, rep, True
+        result.unlink(missing_ok=True)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return arm, case_id, rep, False

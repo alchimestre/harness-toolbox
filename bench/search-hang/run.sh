@@ -52,5 +52,5 @@ start=$(date +%s)
 status=$?
 echo $(( $(date +%s) - start )) > "$tag.secs"
 
-python3 "$here/check.py" "$case_id" "$tag.jsonl" "$tag.wall.jsonl" > "$tag.result.json"
+python3 "$here/check.py" "$case_id" "$tag.jsonl" "$tag.wall.jsonl" > "$tag.result.json" || { rm -f "$tag.result.json"; exit 1; }
 exit "$status"
