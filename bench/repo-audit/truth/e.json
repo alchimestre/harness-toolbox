@@ -1,0 +1,105 @@
+{
+ "defects": {
+  "doc-command-missing": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      10,
+      10
+     ],
+     "quote": "| `invoice export <file> <out.csv>` | Write lines to CSV |"
+    }
+   ]
+  },
+  "flag-renamed": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      12,
+      12
+     ],
+     "quote": "`--currency <code>` sets the output currency label"
+    },
+    {
+     "file": "src/cli.js",
+     "lines": [
+      9,
+      9
+     ],
+     "quote": "const currencyIndex = argv.indexOf(\"--curr\");"
+    }
+   ]
+  },
+  "dead-export-round-half": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/totals.js",
+     "lines": [
+      11,
+      11
+     ],
+     "quote": "function roundHalfUp(cents) {"
+    }
+   ]
+  },
+  "swallowed-load-error": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "src/load.js",
+     "lines": [
+      14,
+      14
+     ],
+     "quote": "} catch (err) {"
+    }
+   ]
+  },
+  "untested-format-money": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "src/format.js",
+     "lines": [
+      3,
+      3
+     ],
+     "quote": "function formatMoney(cents, currency) {"
+    }
+   ]
+  }
+ },
+ "decoys": {
+  "dispatch-commands": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/cli.js",
+     "lines": [
+      15,
+      15
+     ],
+     "quote": "const COMMANDS = { total: runTotal };"
+    }
+   ]
+  },
+  "sumcents-tested": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "test/totals.test.js",
+     "lines": [
+      4,
+      4
+     ],
+     "quote": "const { sumCents } = require(\"../src/totals\");"
+    }
+   ]
+  }
+ }
+}

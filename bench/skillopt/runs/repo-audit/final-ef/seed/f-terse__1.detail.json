@@ -1,0 +1,1 @@
+{"found": ["dead-export-legacy-path", "duplicate-slug", "flag-renamed", "swallowed-read-error"], "decoys": ["reexport-load-notes"], "reward": 0.41666666666666663, "hard": false, "fails": ["missed doc-command-missing", "missed untested-render-markdown", "decoy reexport-load-notes"]}

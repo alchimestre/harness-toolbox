@@ -1,0 +1,199 @@
+{
+ "defects": {
+  "doc-command-missing": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      10,
+      10
+     ],
+     "quote": "npm run validate"
+    }
+   ]
+  },
+  "flag-renamed": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      9,
+      9
+     ],
+     "quote": "npm run check -- .env --strict"
+    },
+    {
+     "file": "README.md",
+     "lines": [
+      22,
+      22
+     ],
+     "quote": "| `--strict`"
+    },
+    {
+     "file": "bin/envcheck.js",
+     "lines": [
+      24,
+      24
+     ],
+     "quote": "argv.includes('--fail-on-warn')"
+    }
+   ]
+  },
+  "dead-export-camel": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/names.js",
+     "lines": [
+      5,
+      7
+     ],
+     "quote": "export function toCamel(name)"
+    }
+   ]
+  },
+  "dead-export-host": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/rules.js",
+     "lines": [
+      26,
+      28
+     ],
+     "quote": "export function isHost(value)"
+    }
+   ]
+  },
+  "swallowed-schema-error": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "bin/envcheck.js",
+     "lines": [
+      18,
+      22
+     ],
+     "quote": "schema = {};"
+    }
+   ]
+  },
+  "duplicate-unquote": {
+   "axis": "consistency",
+   "at": [
+    {
+     "file": "src/parse.js",
+     "lines": [
+      3,
+      7
+     ],
+     "quote": "function unquote(value)"
+    },
+    {
+     "file": "src/schema.js",
+     "lines": [
+      26,
+      28
+     ],
+     "quote": "function stripQuotes(text)"
+    }
+   ]
+  },
+  "untested-load-schema": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "src/schema.js",
+     "lines": [
+      6,
+      8
+     ],
+     "quote": "export function loadSchema(path)"
+    }
+   ]
+  }
+ },
+ "decoys": {
+  "sigpipe-noop": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "bin/envcheck.js",
+     "lines": [
+      7,
+      7
+     ],
+     "quote": "process.on('SIGPIPE', () => {});"
+    }
+   ]
+  },
+  "predicate-catch": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "src/rules.js",
+     "lines": [
+      13,
+      20
+     ],
+     "quote": "export function isUrl(value)"
+    }
+   ]
+  },
+  "package-entry-reexport": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/index.js",
+     "lines": [
+      1,
+      2
+     ],
+     "quote": "export { validate } from './schema.js';"
+    }
+   ]
+  },
+  "port-not-duplicate": {
+   "axis": "consistency",
+   "at": [
+    {
+     "file": "src/rules.js",
+     "lines": [
+      5,
+      7
+     ],
+     "quote": "export function isPort(value)"
+    }
+   ]
+  },
+  "validate-tested-elsewhere": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "src/schema.js",
+     "lines": [
+      10,
+      24
+     ],
+     "quote": "export function validate(env, schema)"
+    }
+   ]
+  },
+  "exit-codes-documented": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      24,
+      24
+     ],
+     "quote": "Exit codes: `0` valid"
+    }
+   ]
+  }
+ }
+}

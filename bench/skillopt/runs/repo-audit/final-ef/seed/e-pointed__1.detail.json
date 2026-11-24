@@ -1,0 +1,1 @@
+{"found": ["dead-export-round-half", "flag-renamed", "swallowed-load-error", "untested-format-money"], "decoys": ["dispatch-commands", "sumcents-tested"], "reward": 0.30000000000000004, "hard": false, "fails": ["missed doc-command-missing", "decoy dispatch-commands", "decoy sumcents-tested"]}

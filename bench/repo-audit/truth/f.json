@@ -1,0 +1,134 @@
+{
+ "defects": {
+  "doc-command-missing": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      15,
+      15
+     ],
+     "quote": "| `notesync prune <source>` | Delete notes older than 90 days |"
+    }
+   ]
+  },
+  "flag-renamed": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      17,
+      17
+     ],
+     "quote": "`sync` accepts `--dry-run` to print the count without writing."
+    },
+    {
+     "file": "notesync/__main__.py",
+     "lines": [
+      17,
+      17
+     ],
+     "quote": "sync.add_argument(\"--preview\", action=\"store_true\")"
+    }
+   ]
+  },
+  "dead-export-legacy-path": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "notesync/store.py",
+     "lines": [
+      27,
+      27
+     ],
+     "quote": "def legacy_path(folder):"
+    }
+   ]
+  },
+  "swallowed-read-error": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "notesync/store.py",
+     "lines": [
+      16,
+      16
+     ],
+     "quote": "except OSError:"
+    }
+   ]
+  },
+  "duplicate-slug": {
+   "axis": "consistency",
+   "at": [
+    {
+     "file": "notesync/store.py",
+     "lines": [
+      8,
+      8
+     ],
+     "quote": "return re.sub(r\"[^a-z0-9]+\", \"-\", name.lower()).strip(\"-\")"
+    },
+    {
+     "file": "notesync/render.py",
+     "lines": [
+      6,
+      6
+     ],
+     "quote": "return re.sub(r\"[^a-z0-9]+\", \"-\", title.lower()).strip(\"-\")"
+    }
+   ]
+  },
+  "untested-render-markdown": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "notesync/render.py",
+     "lines": [
+      9,
+      9
+     ],
+     "quote": "def render_markdown(note):"
+    }
+   ]
+  }
+ },
+ "decoys": {
+  "reexport-load-notes": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "notesync/__init__.py",
+     "lines": [
+      2,
+      2
+     ],
+     "quote": "from .store import load_notes"
+    },
+    {
+     "file": "README.md",
+     "lines": [
+      21,
+      21
+     ],
+     "quote": "from notesync import load_notes"
+    }
+   ]
+  },
+  "store-tested": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "tests/test_store.py",
+     "lines": [
+      1,
+      1
+     ],
+     "quote": "from notesync.store import load_notes, save_note"
+    }
+   ]
+  }
+ }
+}

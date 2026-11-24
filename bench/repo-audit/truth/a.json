@@ -1,0 +1,215 @@
+{
+ "defects": {
+  "doc-command-missing": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      11,
+      11
+     ],
+     "quote": "node bin/logsift.js export app.log --to csv"
+    }
+   ]
+  },
+  "flag-renamed": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      8,
+      8
+     ],
+     "quote": "app.log --min-level warn"
+    },
+    {
+     "file": "README.md",
+     "lines": [
+      18,
+      18
+     ],
+     "quote": "| `--min-level <level>`"
+    },
+    {
+     "file": "src/args.js",
+     "lines": [
+      9,
+      9
+     ],
+     "quote": "arg === '--level'"
+    }
+   ]
+  },
+  "dead-export-pad": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/util.js",
+     "lines": [
+      3,
+      7
+     ],
+     "quote": "function padRight(text, width)"
+    }
+   ]
+  },
+  "dead-export-histogram": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/stats.js",
+     "lines": [
+      30,
+      38
+     ],
+     "quote": "function histogram(entries, bucket)"
+    },
+    {
+     "file": "src/stats.js",
+     "lines": [
+      40,
+      40
+     ],
+     "quote": "module.exports = { summarise, countByLevel, durationToMs, histogram };"
+    }
+   ]
+  },
+  "swallowed-parse-error": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "src/parse.js",
+     "lines": [
+      8,
+      12
+     ],
+     "quote": "entries.push(JSON.parse(line));"
+    }
+   ]
+  },
+  "duplicate-duration-parser": {
+   "axis": "consistency",
+   "at": [
+    {
+     "file": "src/filter.js",
+     "lines": [
+      6,
+      10
+     ],
+     "quote": "function parseDuration(text)"
+    },
+    {
+     "file": "src/stats.js",
+     "lines": [
+      4,
+      9
+     ],
+     "quote": "function durationToMs(text)"
+    }
+   ]
+  },
+  "untested-summarise": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "src/stats.js",
+     "lines": [
+      26,
+      28
+     ],
+     "quote": "function summarise(entries)"
+    }
+   ]
+  }
+ },
+ "decoys": {
+  "dispatch-formatters": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/format.js",
+     "lines": [
+      13,
+      20
+     ],
+     "quote": "function formatJson(entries)"
+    },
+    {
+     "file": "src/format.js",
+     "lines": [
+      28,
+      28
+     ],
+     "quote": "module.exports = { formatLines, formatTable, formatJson, formatDuration };"
+    }
+   ]
+  },
+  "unused-underscore-param": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "src/format.js",
+     "lines": [
+      9,
+      9
+     ],
+     "quote": "function formatLines(entries, _opts)"
+    }
+   ]
+  },
+  "format-duration-not-duplicate": {
+   "axis": "consistency",
+   "at": [
+    {
+     "file": "src/format.js",
+     "lines": [
+      22,
+      26
+     ],
+     "quote": "function formatDuration(ms)"
+    }
+   ]
+  },
+  "config-enoent-rethrow": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "src/config.js",
+     "lines": [
+      6,
+      10
+     ],
+     "quote": "if (err.code !== 'ENOENT') throw err;"
+    }
+   ]
+  },
+  "color-env-documented": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      23,
+      23
+     ],
+     "quote": "Set `LOGSIFT_COLOR=0`"
+    }
+   ]
+  },
+  "count-by-level-tested": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "src/stats.js",
+     "lines": [
+      11,
+      15
+     ],
+     "quote": "function countByLevel(entries)"
+    }
+   ]
+  }
+ }
+}

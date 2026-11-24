@@ -1,0 +1,1 @@
+{"found": ["doc-command-missing", "flag-renamed", "swallowed-read-error"], "decoys": [], "reward": 0.5, "hard": false, "fails": ["missed dead-export-legacy-path", "missed duplicate-slug", "missed untested-render-markdown"]}
