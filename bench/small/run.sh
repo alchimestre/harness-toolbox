@@ -40,7 +40,7 @@ if [ -n "${PROMPT_ONLY:-}" ]; then printf '%s\n' "$prompt"; rm -r "$dir"; exit 0
 start=$(date +%s)
 rm -f "$tag.decoy" "$tag.result" "$tag.parts" "$tag.fails"
 append=(); [ -n "${AGENT_PROMPT:-}" ] && append=(--append-system-prompt "$AGENT_PROMPT")
-(cd "$dir" && timeout 300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files \
+(cd "$dir" && OMP_RUN_TIMEOUT=300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files \
   --config overlay.yml --tools "$tools" --model "$model" "${append[@]}" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"

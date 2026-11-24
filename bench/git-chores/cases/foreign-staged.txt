@@ -1,0 +1,1 @@
+ignore dist/, commit, push. leave everything else in the tree alone.
