@@ -32,5 +32,5 @@ You change omp configuration and prove the change landed. You do not benchmark m
 - Before → after for each key, as a table.
 - Read-back result per key.
 - Example config: edited, or why not.
-- Takes effect: roles and agent overrides at the next subagent spawn, no restart. Any other key: what its `omp://` doc says; doc silent: say unknown.
+- Takes effect: one line for every changed key, with no key left out. Roles and agent overrides: at the next subagent spawn, no restart. Any other key: the timing its `omp://` doc gives; doc silent: `unknown`.
 - Conflicts or shadowing found in step 2.
