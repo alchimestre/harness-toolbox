@@ -22,7 +22,7 @@ append=(); [ -n "${AGENT_PROMPT:-}" ] && append=(--append-system-prompt "$AGENT_
   --config overlay.yml --tools read,grep,glob,bash --model "$model" "${append[@]}" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"
-python3 -c 'import sys; sys.path.insert(0, "."); import score; open(sys.argv[2], "w").write(score.read_run(sys.argv[1])[4])' "$tag.jsonl" "$tag.answer" 2>/dev/null || : > "$tag.answer"
+python3 -c 'import sys; sys.path.insert(0, "."); import score; open(sys.argv[2], "w").write(score.read_run(sys.argv[1])[4])' "$tag.jsonl" "$tag.answer" || { echo "answer parse failed: $tag" >&2; rm -r "$dir"; exit 4; }
 python3 check.py "$case_name" "$dir" "$tag.answer" 2> "$tag.fails" | tail -1 > "$tag.parts"
 parts=$(cat "$tag.parts"); [ -n "$parts" ] && [ "${parts%/*}" = "${parts#*/}" ] && echo pass > "$tag.result" || echo fail > "$tag.result"
 rm -r "$dir"
