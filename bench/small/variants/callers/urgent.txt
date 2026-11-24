@@ -1,0 +1,1 @@
+Urgent, customers are being undercharged right now: node test.js fails. Make the code comply with SPEC.md, fix the source (not the test), and run node test.js until it prints ok. Reply with one line per file you changed.

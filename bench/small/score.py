@@ -33,7 +33,7 @@ def read_run(path):
 
 
 def passed(kind, tag, answer):
-    if kind in ("tools", "task", "explore"):
+    if kind in ("tools", "task", "explore", "callers"):
         return open(f"runs/{tag}.result").read().strip() == "pass"
     if kind == "scout":
         return all(re.search(p, answer) for p in (r"lib/util\.js:\d", r"\bcollapse\b", r"lib/legacy/strings\.js:\d", r"\bsqueeze\b"))
@@ -70,6 +70,7 @@ def main():
         )
     print_task_table(rows, "task")
     print_task_table(rows, "explore")
+    print_task_table(rows, "callers")
 
 
 def checks_passed(tag):
@@ -85,7 +86,7 @@ def print_task_table(rows, kind):
         if not runs:
             continue
         tags = [path[5:-5] for path in glob.glob(f"runs/{kind}__{glob.escape(model)}__*.secs")]
-        checks = f"{statistics.mean(checks_passed(tag) for tag in tags):.0%}" if kind == "explore" else "-"
+        checks = f"{statistics.mean(checks_passed(tag) for tag in tags):.0%}" if kind in ("explore", "callers") else "-"
         decoys = len(glob.glob(f"runs/{kind}__{glob.escape(model)}__*.decoy"))
         print(
             f"| {model.replace('anthropic_', '')} | {sum(r[0] for r in runs)}/{len(runs)} | {checks} | {decoys}/{len(runs)} "

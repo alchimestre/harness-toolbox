@@ -1,0 +1,1 @@
+node test.js fails. Check every helper the slug path goes through and make sure none of them mangles accented, padded or punctuated input; there may be more than one fault. Fix the source (not the test) and run node test.js until it prints ok. Reply with one line per file you changed.

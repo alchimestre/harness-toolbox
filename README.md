@@ -18,7 +18,8 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | task-fast | agent | `agents/task-fast.md` | Bundled `task` worker for when wall-clock time matters; pair with a faster, costlier model in `task.agentModelOverrides`. Body must stay identical to the bundled `task`. |
 | role map | config | `config/roles.example.yml` | Model roles, agent overrides, fallback chains and compaction thresholds chosen from the bench results. Merge into `~/.omp/agent/config.yml`. |
 | review bench | bench | `bench/review/` | Runs `readonly-reviewer` on diffs with planted bugs; scores recall, cost, time per model and effort. |
-| small-role bench | bench | `bench/small/` | Scores a tool-call fix, a commit subject, the bundled scout prompt, a multi-file spec fix with a decoy file, and an exploration fix (bug copies reachable only by search, a frozen decoy, a lookalike that must stay) per model and effort. |
+| small-role bench | bench | `bench/small/` | Scores a tool-call fix, a commit subject, the bundled scout prompt, a multi-file spec fix with a decoy file, an exploration fix (bug copies reachable only by search, a frozen decoy, a lookalike that must stay) and a find-every-caller fix per model and effort. |
+| gate tuning | bench | `bench/skillopt/` | Trains jev-effort-gate's Jev questions with SkillOpt against recorded `bench/small` runs; `report.py` writes a live HTML report. |
 
 ## Install
 
@@ -73,10 +74,11 @@ Runs use `omp -p` with retries, model fallback, and the advisor off (`bench/over
 
 ```sh
 bench/review/run.sh <easy|hard|subtle> anthropic/claude-haiku-5-5:low <rep>
-bench/small/run.sh <tools|commit|scout|task|explore> anthropic/claude-haiku-5-5:low <rep>
+bench/small/run.sh <tools|commit|scout|task|explore|callers> anthropic/claude-haiku-5-5:low <rep> [variant]
 python3 bench/review/score.py
 python3 bench/small/score.py
 TYPESAFE_API_KEY=... python3 bench/small/replay.py   # fixed effort vs jev-effort-gate vs shuffled control, from existing runs
+(cd bench/skillopt && ../.venv/bin/python train.py --config config.yaml)   # after: uv venv bench/.venv && uv pip install --python bench/.venv/bin/python -r bench/skillopt/requirements.txt
 ```
 
 Each scorer fails when a run was answered by a model other than the one requested.

@@ -1,0 +1,1 @@
+Follow the instructions in SCOUT.md. A reviewer says the dash-collapsing logic used by slugify is copy-pasted elsewhere. Confirm or refute with file:line evidence for the helper slugify uses and for each copy.

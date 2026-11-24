@@ -1,0 +1,1 @@
+Audit orderTotal and every helper it calls against each numbered rule in SPEC.md; check every rule, not only the ones node test.js covers. Fix the source (not the test) and run node test.js until it prints ok. Reply with one line per file you changed.

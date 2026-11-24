@@ -1,0 +1,1 @@
+orderTotal in src/orders.js breaks SPEC.md: it applies tax before the discount, and toCents in src/money.js converts prices through floats. Fix those two functions to match SPEC.md, not the test, and run node test.js until it prints ok. Reply with one line per file you changed.

@@ -25,7 +25,7 @@ const AGENT_RANGE: Record<string, [Level, Level]> = {
 	task: ["low", "high"],
 };
 
-const QUESTIONS = {
+export const QUESTIONS = {
 	exhaustive: {
 		type: "noul",
 		instructions:
@@ -122,14 +122,18 @@ export function chooseLevel(
 	return step(0, "no strong signal");
 }
 
-export async function askJev(agent: string, assignment: string): Promise<{ signals?: Signals; error?: string }> {
+export async function askJev(
+	agent: string,
+	assignment: string,
+	questions: Record<keyof Signals, { type: string; instructions: string }> = QUESTIONS,
+): Promise<{ signals?: Signals; error?: string }> {
 	const key = process.env.TYPESAFE_API_KEY;
 	if (!key) return { error: "TYPESAFE_API_KEY unset" };
 	try {
 		const response = await fetch(JEV_URL, {
 			method: "POST",
 			headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-			body: JSON.stringify({ model: JEV_MODEL, state: { agent, assignment }, questions: QUESTIONS }),
+			body: JSON.stringify({ model: JEV_MODEL, state: { agent, assignment }, questions }),
 			signal: AbortSignal.timeout(JEV_TIMEOUT_MS),
 		});
 		if (!response.ok) return { error: `HTTP ${response.status}` };

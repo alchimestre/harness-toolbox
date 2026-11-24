@@ -1,0 +1,1 @@
+Find every place that computes or reports a shipping weight and make each one comply with SPEC.md; some modules sum item weights themselves and some call the wrong helper. node test.js covers one of them. Fix the source (not the test) and run node test.js until it prints ok. Reply with one line per file you changed.

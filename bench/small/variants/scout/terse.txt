@@ -1,0 +1,1 @@
+Follow the instructions in SCOUT.md. slugify dash collapse: helper name, file:line, and any duplicate with file:line.

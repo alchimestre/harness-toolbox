@@ -1,0 +1,1 @@
+Support ticket: "I bought three stickers at 0.57 each and was charged 1.70." node test.js reproduces a similar case. Fix the bug so the code complies with SPEC.md, fix the source (not the test), and run node test.js until it prints ok. Reply with one line per file you changed.

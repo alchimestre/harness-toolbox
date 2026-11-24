@@ -1,0 +1,1 @@
+slugify in lib/text.js turns '  Déjà vu  ' into the wrong slug; node test.js expects 'deja-vu'. Fix slugify in the source (not the test) and run node test.js until it prints ok. Reply with one line naming the file you changed.

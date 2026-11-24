@@ -1,0 +1,1 @@
+Rounding bug in money handling, see SPEC.md and node test.js. Fix source, not test; run node test.js until ok. One line per changed file.

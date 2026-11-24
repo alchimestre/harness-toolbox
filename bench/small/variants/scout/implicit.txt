@@ -1,0 +1,1 @@
+Follow the instructions in SCOUT.md. We want to delete duplicated string helpers. Where does slugify's dash-collapsing helper live, and is it safe to delete any copy of it? Answer with file:line for each function involved.

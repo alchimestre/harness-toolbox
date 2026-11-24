@@ -1,0 +1,1 @@
+parcelWeight in src/weight.js leaves out the 50 g packaging that SPEC.md requires, so node test.js fails. Fix the source (not the test) so the codebase complies with SPEC.md, and run node test.js until it prints ok. Reply with one line per file you changed.

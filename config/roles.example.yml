@@ -2,7 +2,7 @@ modelRoles:
   default: anthropic/claude-opus-5-5:medium
   slow: anthropic/claude-opus-5-5:high
   plan: anthropic/claude-opus-5-5:medium
-  task: anthropic/claude-haiku-5-5:medium
+  task: anthropic/claude-haiku-5-5:high
   designer: anthropic/claude-sonnet-5-5:medium
   smol: anthropic/claude-haiku-5-5:low
   commit: anthropic/claude-haiku-5-5:low

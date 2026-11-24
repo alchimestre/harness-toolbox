@@ -1,0 +1,1 @@
+Several modules parse decimal price strings into cents with their own float arithmetic. Make them all use one exact conversion from src/money.js, as SPEC.md requires, leaving src/legacy alone. Fix the source (not the test) and run node test.js until it prints ok. Reply with one line per file you changed.

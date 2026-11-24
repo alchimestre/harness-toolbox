@@ -1,0 +1,1 @@
+Hotfix, needed fast: order totals are wrong. node test.js fails. Make the code match SPEC.md, fix the source (not the test), and run node test.js until it prints ok. Reply with one line per file you changed.

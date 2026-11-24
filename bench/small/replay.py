@@ -14,10 +14,9 @@ import sys
 
 from score import passed, read_run
 
-MODEL = (sys.argv[1] if len(sys.argv) > 1 else "anthropic/claude-haiku-5-5").replace("/", "_", 1)
+MODEL = "anthropic_claude-haiku-5-5"
 LEVELS = ("low", "medium", "high")
-AGENT_FOR_KIND = {"tools": "task", "task": "task", "explore": "task", "scout": "scout"}
-PICKS_FILE = "runs/gate-picks.json"
+AGENT_FOR_KIND = {"tools": "task", "task": "task", "explore": "task", "callers": "task", "scout": "scout"}
 SHUFFLES = 2000
 
 
@@ -43,17 +42,12 @@ def prompt_of(prefix, prompt_file):
 
 
 def gate_picks(all_cases):
-    picks = json.load(open(PICKS_FILE)) if os.path.exists(PICKS_FILE) else {}
     todo = {
         case: {"agent": AGENT_FOR_KIND[kind], "prompt": prompt_of(prefix, prompt_file)}
         for case, (kind, prefix, prompt_file) in all_cases.items()
-        if case not in picks
     }
-    if todo:
-        output = subprocess.run(["bun", "gate-picks.ts"], input=json.dumps(todo), capture_output=True, text=True, check=True)
-        picks |= json.loads(output.stdout)
-        open(PICKS_FILE, "w").write(json.dumps(picks, indent=1))
-    return picks
+    output = subprocess.run(["bun", "gate-picks.ts"], input=json.dumps(todo), capture_output=True, text=True, check=True)
+    return json.loads(output.stdout)
 
 
 def outcomes(all_cases):
@@ -115,5 +109,8 @@ def main():
     print(f"\nshuffles at or above the gate's pass rate: {beaten:.1%}")
 
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-main()
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        MODEL = sys.argv[1].replace("/", "_", 1)
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    main()
