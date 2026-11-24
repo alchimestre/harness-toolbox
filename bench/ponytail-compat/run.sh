@@ -16,7 +16,10 @@ cat "$here/ponytail.md" > "$system"
 [ -n "${AGENT_PROMPT:-}" ] && { printf '\n' >> "$system"; cat "$AGENT_PROMPT" >> "$system"; }
 rm -f "$tag.result" "$tag.parts" "$tag.fails"
 start=$(date +%s)
-(cd "$dir" && OMP_RUN_TIMEOUT=300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files --no-rules \
+# A slot-queueing omp wrapper that honours OMP_RUN_TIMEOUT starts the clock after admission; plain omp needs timeout.
+run_omp=(timeout 300 omp)
+head -c 8192 "$(command -v omp)" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=300 omp)
+(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-context-files --no-rules \
   --config overlay.yml --tools read,grep,glob,bash,edit,write --model "$model" --append-system-prompt "$system" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"

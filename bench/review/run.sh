@@ -32,7 +32,10 @@ prompt="Follow the reviewer instructions in agent.md (ignore its frontmatter). R
 
 $(cat "$case_.diff")"
 start=$(date +%s)
-(cd "$dir" && OMP_RUN_TIMEOUT=300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files \
+# A slot-queueing omp wrapper that honours OMP_RUN_TIMEOUT starts the clock after admission; plain omp needs timeout.
+run_omp=(timeout 300 omp)
+head -c 8192 "$(command -v omp)" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=300 omp)
+(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-context-files \
   --config overlay.yml --tools read,grep,glob,find --model "$model" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"
