@@ -1,0 +1,1 @@
+Hide `.cache/` from git status on this machine only. Nothing should be committed or pushed.

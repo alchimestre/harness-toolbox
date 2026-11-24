@@ -32,7 +32,7 @@ prompt="Follow the reviewer instructions in agent.md (ignore its frontmatter). R
 
 $(cat "$case_.diff")"
 start=$(date +%s)
-(cd "$dir" && timeout 300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files \
+(cd "$dir" && OMP_RUN_TIMEOUT=300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files \
   --config overlay.yml --tools read,grep,glob,find --model "$model" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"

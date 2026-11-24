@@ -1,0 +1,1 @@
+Scratch .tmp files keep getting into docs/drafts/. Make the repo ignore them for everyone, remove the ones already tracked, keep outline.md. Commit and push.
