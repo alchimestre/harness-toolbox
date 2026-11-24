@@ -1,0 +1,48 @@
+model:
+  backend: claude_chat
+  optimizer_backend: claude_chat
+  target_backend: claude_chat
+  optimizer: anthropic/claude-sonnet-5-5
+  target: anthropic/claude-haiku-5-5
+  reasoning_effort: medium
+  rewrite_reasoning_effort: ""
+
+train:
+  num_epochs: 3
+  train_size: 0
+  batch_size: 8
+  accumulation: 1
+  seed: 42
+
+gradient:
+  minibatch_size: 4
+  merge_batch_size: 4
+  analyst_workers: 3
+  failure_only: false
+
+optimizer:
+  learning_rate: 2
+  min_learning_rate: 1
+  lr_scheduler: cosine
+  lr_control_mode: fixed
+  skill_update_mode: patch
+  use_slow_update: true
+  slow_update_samples: 8
+  slow_update_gate_with_selection: false
+  longitudinal_pair_policy: mixed
+  use_meta_skill: true
+  use_skill_aware_reflection: false
+
+evaluation:
+  use_gate: true
+  gate_metric: soft
+  sel_env_num: 0
+  test_env_num: 0
+  eval_test: false
+
+env:
+  name: code-rule
+  skill_init: runs/code-rule/seed.md
+  split_mode: split_dir
+  split_dir: runs/code-rule/split
+  out_root: ""

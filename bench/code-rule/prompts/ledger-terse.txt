@@ -1,0 +1,1 @@
+node test.js fails. Fix src/ledger.js balances(transactions): skip voided: true transactions; keep accounts that net to 0; if a balance is below -1000, subtract 3 percent of the amount below -1000, rounded half up to the cent (-1150 gives fee 5). Source only, not the test; run node test.js until ok. One line per changed file.

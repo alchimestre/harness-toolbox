@@ -1,0 +1,1 @@
+node test.js fails. Add to src/parse.js: quoted values are unquoted; a backslash at line end joins with the next line (trimmed, one space); a line without '=' throws 'line N: expected key = value' with N the logical line's start line. Fix the source, not the test; run node test.js until ok. One line per changed file.

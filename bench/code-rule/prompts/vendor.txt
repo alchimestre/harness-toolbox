@@ -1,0 +1,1 @@
+Add src/slug.js exporting toSlug(title), which turns a title into a URL slug using slugify-lite 1.2.0. The package is already in node_modules. The build runs offline, so nothing can be installed from the network. node test.js must print ok. Change the source, not the test. One line per changed file.
