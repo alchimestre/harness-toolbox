@@ -81,12 +81,13 @@ Runs use `omp -p` with retries, model fallback, and the advisor off (`bench/over
 
 ```sh
 bench/review/run.sh <case> anthropic/claude-haiku-5-5:low <rep> [agent|prompt-file]
-bench/small/run.sh <tools|commit|scout|task|explore|callers|expiry|guard> anthropic/claude-haiku-5-5:low <rep> [variant]
+bench/small/run.sh <tools|commit|scout|task|explore|callers|expiry|guard> anthropic/claude-haiku-5-5:low <rep> [variant]   # env: RUN_TAG, AGENT_PROMPT, PROMPT_ONLY
 python3 bench/review/score.py [case ...]
 python3 bench/small/score.py
 TYPESAFE_API_KEY=... python3 bench/small/replay.py   # fixed effort vs jev-effort-gate vs shuffled control, from existing runs
 (cd bench/skillopt && ../.venv/bin/python train.py --config config.yaml)   # after: uv venv bench/.venv && uv pip install --python bench/.venv/bin/python -r bench/skillopt/requirements.txt
 (cd bench/skillopt && ../.venv/bin/python train_review.py --config review.yaml)   # reviewer prompt; reward = recall − 0.25 × decoys flagged
+(cd bench/skillopt && ../.venv/bin/python train_task.py --config task.yaml)   # task agent prompt; reward = hidden checks passed − 0.25 × decoy edited
 ```
 
 Each scorer fails when a run was answered by a model other than the one requested.

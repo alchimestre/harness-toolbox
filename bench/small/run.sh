@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # usage: run.sh <tools|commit|scout|task|explore|callers|expiry|guard> <provider/model:level> <rep> [variant]
 # A variant replaces the prompt with variants/<kind>/<variant>.txt; same fixture and checks.
+# RUN_TAG=<absolute path prefix> overrides where the run's files go; AGENT_PROMPT (absolute file) is appended to the system prompt.
+# PROMPT_ONLY=1 prints the assignment and exits without running.
 set -u
 kind=$1 model=$2 rep=$3 variant=${4:-}
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
 mkdir -p runs/variants
 [ -f scout.md ] || { unpacked=$(mktemp -d); omp agents unpack --dir "$unpacked" >/dev/null && cp "$unpacked/scout.md" .; rm -r "$unpacked"; }
-tag="${kind}__${model//\//_}__${rep}"
-[ -n "$variant" ] && tag="variants/${kind}-${variant}__${model//\//_}__${rep}"
+tag="runs/${kind}__${model//\//_}__${rep}"
+[ -n "$variant" ] && tag="runs/variants/${kind}-${variant}__${model//\//_}__${rep}"
+tag=${RUN_TAG:-$tag}
 dir=$(mktemp -d); cp ../overlay.yml "$dir/"
 if [ "$kind" = tools ]; then
   cp -R fixture/. "$dir/"
@@ -33,16 +36,20 @@ else
 $(cat commit.diff)"
 fi
 [ -n "$variant" ] && prompt=$(cat "variants/$kind/$variant.txt")
+if [ -n "${PROMPT_ONLY:-}" ]; then printf '%s\n' "$prompt"; rm -r "$dir"; exit 0; fi
 start=$(date +%s)
-rm -f "runs/$tag.decoy" "runs/$tag.result" "runs/$tag.parts"
+rm -f "$tag.decoy" "$tag.result" "$tag.parts" "$tag.fails"
+append=(); [ -n "${AGENT_PROMPT:-}" ] && append=(--append-system-prompt "$AGENT_PROMPT")
 (cd "$dir" && timeout 300 omp -p --mode json --no-session --no-skills --no-extensions --no-context-files \
-  --config overlay.yml --tools "$tools" --model "$model" "$prompt") > "runs/$tag.jsonl" 2> "runs/$tag.err"
-echo "$(( $(date +%s) - start ))" > "runs/$tag.secs"
+  --config overlay.yml --tools "$tools" --model "$model" "${append[@]}" "$prompt") > "$tag.jsonl" 2> "$tag.err"
+status=$?
+echo "$(( $(date +%s) - start ))" > "$tag.secs"
 if [ "$kind" = tools ]; then
-  (cd "$dir" && node test.js >/dev/null 2>&1 && git diff --no-index --quiet "$here/fixture/test.js" test.js) && echo pass > "runs/$tag.result" || echo fail > "runs/$tag.result"
+  (cd "$dir" && node test.js >/dev/null 2>&1 && git diff --no-index --quiet "$here/fixture/test.js" test.js) && echo pass > "$tag.result" || echo fail > "$tag.result"
 elif [ -f "check-$kind.js" ]; then
-  node "$here/check-$kind.js" "$dir" 2>/dev/null | tail -1 > "runs/$tag.parts"
-  (node "$here/check-$kind.js" "$dir" >/dev/null 2>&1 && git diff --no-index --quiet "$here/$kind-fixture/test.js" "$dir/test.js") && echo pass > "runs/$tag.result" || echo fail > "runs/$tag.result"
-  git diff --no-index --quiet "$here/$kind-fixture/src/legacy" "$dir/src/legacy" || touch "runs/$tag.decoy"
+  node "$here/check-$kind.js" "$dir" 2> "$tag.fails" | tail -1 > "$tag.parts"
+  (node "$here/check-$kind.js" "$dir" >/dev/null 2>&1 && git diff --no-index --quiet "$here/$kind-fixture/test.js" "$dir/test.js") && echo pass > "$tag.result" || echo fail > "$tag.result"
+  git diff --no-index --quiet "$here/$kind-fixture/src/legacy" "$dir/src/legacy" || touch "$tag.decoy"
 fi
 rm -r "$dir"
+exit "$status"
