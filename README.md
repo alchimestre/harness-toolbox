@@ -21,6 +21,7 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | repo-audit | agent | `agents/repo-audit.md` | Read-only whole-repo audit: doc/code drift, inconsistency, dead code, inefficiency, untested behavior. Ranked findings with file:line evidence; writes a report only to a path the caller names. |
 | bench-runner | agent | `agents/bench-runner.md` | Runs a bench matrix through the repo's own run and score scripts in parallel. Waits out quota limits instead of switching models, discards runs answered by another model, regenerates the report page. |
 | git-chores | agent | `agents/git-chores.md` | Gitignore/exclude, untrack, prune worktrees and caches, commit, push. Refuses history rewrites, force pushes and `--no-verify` unless named in the assignment. |
+| flame-graph | agent | `agents/flame-graph.md` | Draws a flame graph SVG of a process (`sample`, `py-spy`), a session or one agent in it (`src/session-flame.ts`: wall time, tokens or cost), or any hierarchy with a number per leaf. For a session it also writes a trace-event timeline. Needs `flamegraph.pl` and `bun`. |
 | role map | config | `config/roles.example.yml` | Model roles, agent overrides, fallback chains and compaction thresholds chosen from the bench results. Merge into `~/.omp/agent/config.yml`. |
 | review bench | bench | `bench/review/` | Runs `readonly-reviewer` on diffs with planted bugs and behavior-preserving decoys (`<case>.diff` + `<case>.json`); scores recall, decoys flagged, cost, time per model and effort. |
 | small-role bench | bench | `bench/small/` | Scores a tool-call fix, a commit subject, the bundled scout prompt, a multi-file spec fix with a decoy file, an exploration fix (bug copies reachable only by search, a frozen decoy, a lookalike that must stay) and a find-every-caller fix per model and effort. |
@@ -52,12 +53,14 @@ ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
 3. Link the agents into the user agent directory:
 
 ```sh
-for agent in readonly-reviewer review-high review-low task-fast omp-config repo-audit bench-runner git-chores; do
+for agent in readonly-reviewer review-high review-low task-fast omp-config repo-audit bench-runner git-chores flame-graph; do
   ln -s /path/to/harness-toolbox/agents/$agent.md ~/.omp/agent/agents/$agent.md
 done
 ```
 
-4. Restart the harness.
+4. For `flame-graph`, install the renderer: `brew install flamegraph`.
+
+5. Restart the harness.
 
 Set `providers.webSearchTimeoutSeconds: 30`. Under parallel load the search provider chain grinds for a minute per failed call.
 
@@ -73,7 +76,7 @@ Set `providers.webSearchTimeoutSeconds: 30`. Under parallel load the search prov
 bun run test
 ```
 
-`test/simulate.ts` drives the guard through the load scenario. `test/wiring.ts` checks each extension against a fake harness API.
+`test/simulate.ts` drives the guard through the load scenario. `test/wiring.ts` checks each extension against a fake harness API. `test/session-flame.ts` checks the folded stacks and timeline built from a session transcript.
 
 ## Bench
 
