@@ -16,7 +16,8 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | writing | rule | `rules/writing.md` | Reader-facing document formats and ticket limits. |
 | readonly-reviewer | agent | `agents/readonly-reviewer.md` | Read-only change review: spec and standards axes kept separate, then correctness, security, performance, tests. Needs the diff passed in. |
 | review-high, review-low | agent | `agents/review-high.md`, `agents/review-low.md` | `readonly-reviewer` at high and low thinking. Bodies must stay identical to `readonly-reviewer`. |
-| task-fast | agent | `agents/task-fast.md` | Bundled `task` worker for when wall-clock time matters; pair with a faster, costlier model in `task.agentModelOverrides`. Body must stay identical to the bundled `task`. |
+| task | agent | `agents/task.md` | Overrides the bundled `task`: its scope covers every spec violation the assignment names, so it fixes what it notices instead of reporting it. Hard passes vs bundled on `bench/small`, Haiku: low 180/234 vs 166/234, medium 131/162 vs 129/162, high 138/162 vs 132/162. The prompt was chosen on `expiry`, `callers` and `guard`; on the fixtures it never saw (`explore`, `task`, `tools`): low 69/90 vs 67/90, medium 75/90 vs 74/90, high 81/90 vs 76/90. |
+| task-fast | agent | `agents/task-fast.md` | `task` worker for when wall-clock time matters; pair with a faster, costlier model in `task.agentModelOverrides`. Body must stay identical to `agents/task.md`. |
 | omp-config | agent | `agents/omp-config.md` | Changes omp settings (roles, overrides, fallback chains, efforts), reads each key back with `omp config get`, mirrors keys an example config already tracks. Never commits. |
 | repo-audit | agent | `agents/repo-audit.md` | Read-only whole-repo audit: doc/code drift, inconsistency, dead code, inefficiency, untested behavior. Ranked findings with file:line evidence; writes a report only to a path the caller names. |
 | bench-runner | agent | `agents/bench-runner.md` | Runs a bench matrix through the repo's own run and score scripts in parallel. Waits out quota limits instead of switching models, discards runs answered by another model, regenerates the report page. |
@@ -53,7 +54,7 @@ ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
 3. Link the agents into the user agent directory:
 
 ```sh
-for agent in readonly-reviewer review-high review-low task-fast omp-config repo-audit bench-runner git-chores flame-graph; do
+for agent in task readonly-reviewer review-high review-low task-fast omp-config repo-audit bench-runner git-chores flame-graph; do
   ln -s /path/to/harness-toolbox/agents/$agent.md ~/.omp/agent/agents/$agent.md
 done
 ```

@@ -164,6 +164,11 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 		const lookupOnly = tools.includes("lsp") && !WRITING_TOOLS.some((tool) => tools.includes(tool));
 		check(lookupOnly === Object.hasOwn(READONLY_AGENTS, name), `${name}: guard list matches its tool list`);
 	}
+
+	const body = (file: string) => readFileSync(`agents/${file}.md`, "utf8").split(/^---$/m).slice(2).join("---");
+	for (const [copy, source] of [["task-fast", "task"], ["review-high", "readonly-reviewer"], ["review-low", "readonly-reviewer"]]) {
+		check(body(copy) === body(source), `${copy}: body identical to ${source}`);
+	}
 }
 
 console.log("\nall wiring checks passed");
