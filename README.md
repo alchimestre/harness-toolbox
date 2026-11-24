@@ -90,3 +90,9 @@ TYPESAFE_API_KEY=... python3 bench/small/replay.py   # fixed effort vs jev-effor
 ```
 
 Each scorer fails when a run was answered by a model other than the one requested.
+
+Review bench limits:
+- 17 cases; Haiku high finds 92–100% of planted defects on each and flags no decoy. Haiku low trails by 8–12 points on 6 cases.
+- `train_review.py` trained a prompt on Haiku low that scored lower than the current prompt on unseen cases, so the reviewer agents keep their hand-written prompt.
+- Training needs 15+ cases where the target effort still misses defects; with fewer, SkillOpt memorises case details.
+- A decoy must be a change no reviewer can reasonably flag. A removed guard in an exported function is a defect under a "no behavior change" spec.
