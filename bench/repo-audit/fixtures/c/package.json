@@ -1,0 +1,12 @@
+{
+  "name": "envcheck",
+  "version": "1.2.0",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "bin": { "envcheck": "bin/envcheck.js" },
+  "scripts": {
+    "test": "node --test test/",
+    "check": "node bin/envcheck.js"
+  }
+}

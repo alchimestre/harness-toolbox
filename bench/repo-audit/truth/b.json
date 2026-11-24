@@ -1,0 +1,210 @@
+{
+ "defects": {
+  "doc-command-missing": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      11,
+      11
+     ],
+     "quote": "python -m pricewatch prune --older-than 30"
+    },
+    {
+     "file": "README.md",
+     "lines": [
+      21,
+      21
+     ],
+     "quote": "| `prune --older-than <days>`"
+    }
+   ]
+  },
+  "flag-renamed": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "README.md",
+     "lines": [
+      10,
+      10
+     ],
+     "quote": "check --notify email"
+    },
+    {
+     "file": "README.md",
+     "lines": [
+      20,
+      20
+     ],
+     "quote": "| `check [--notify email]`"
+    },
+    {
+     "file": "pricewatch/cli.py",
+     "lines": [
+      14,
+      14
+     ],
+     "quote": "check.add_argument(\"--alert\""
+    }
+   ]
+  },
+  "dead-export-convert": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "pricewatch/money.py",
+     "lines": [
+      15,
+      16
+     ],
+     "quote": "def convert(cents, rate):"
+    }
+   ]
+  },
+  "dead-export-markdown": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "pricewatch/report.py",
+     "lines": [
+      14,
+      19
+     ],
+     "quote": "def render_markdown(items):"
+    }
+   ]
+  },
+  "swallowed-save-error": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "pricewatch/store.py",
+     "lines": [
+      12,
+      17
+     ],
+     "quote": "except OSError:"
+    }
+   ]
+  },
+  "duplicate-price-parser": {
+   "axis": "consistency",
+   "at": [
+    {
+     "file": "pricewatch/alerts.py",
+     "lines": [
+      5,
+      7
+     ],
+     "quote": "def _to_cents(value):"
+    },
+    {
+     "file": "pricewatch/money.py",
+     "lines": [
+      6,
+      8
+     ],
+     "quote": "def parse_price(text):"
+    }
+   ]
+  },
+  "untested-alerts": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "pricewatch/alerts.py",
+     "lines": [
+      10,
+      12
+     ],
+     "quote": "def should_alert(item):"
+    },
+    {
+     "file": "pricewatch/alerts.py",
+     "lines": [
+      15,
+      16
+     ],
+     "quote": "def send(url, price, channel):"
+    }
+   ]
+  }
+ },
+ "decoys": {
+  "load-missing-file-ok": {
+   "axis": "errors",
+   "at": [
+    {
+     "file": "pricewatch/store.py",
+     "lines": [
+      4,
+      9
+     ],
+     "quote": "except FileNotFoundError:"
+    }
+   ]
+  },
+  "rate-limit-sleep": {
+   "axis": "drift",
+   "at": [
+    {
+     "file": "pricewatch/fetch.py",
+     "lines": [
+      14,
+      19
+     ],
+     "quote": "time.sleep(REQUEST_INTERVAL_SECONDS)"
+    },
+    {
+     "file": "README.md",
+     "lines": [
+      14,
+      14
+     ],
+     "quote": "once per second"
+    }
+   ]
+  },
+  "documented-reexport": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "pricewatch/__init__.py",
+     "lines": [
+      1,
+      3
+     ],
+     "quote": "__all__ = [\"parse_price\"]"
+    }
+   ]
+  },
+  "top-level-handler": {
+   "axis": "dead-code",
+   "at": [
+    {
+     "file": "pricewatch/cli.py",
+     "lines": [
+      34,
+      40
+     ],
+     "quote": "except Exception as err:"
+    }
+   ]
+  },
+  "render-text-tested": {
+   "axis": "tests",
+   "at": [
+    {
+     "file": "pricewatch/report.py",
+     "lines": [
+      5,
+      11
+     ],
+     "quote": "def render_text(items):"
+    }
+   ]
+  }
+ }
+}

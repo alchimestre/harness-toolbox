@@ -1,0 +1,76 @@
+{
+ "defects": {
+  "doc-command-missing": {
+   "axis": "drift",
+   "at": [
+    {"file": "README.md", "lines": [11, 11], "quote": "| `sample <file> --n <rows>` |"},
+    {"file": "README.md", "lines": [19, 19], "quote": "python -m csvtally sample data.csv --n 10"}
+   ]
+  },
+  "flag-renamed": {
+   "axis": "drift",
+   "at": [
+    {"file": "README.md", "lines": [18, 18], "quote": "count data.csv --by city --delimiter"},
+    {"file": "csvtally/cli.py", "lines": [33, 33], "quote": "count.add_argument(\"--sep\", default=\",\")"}
+   ]
+  },
+  "dead-export-format-table": {
+   "axis": "dead-code",
+   "at": [
+    {"file": "csvtally/text.py", "lines": [1, 6], "quote": "def format_table(rows):"}
+   ]
+  },
+  "dead-export-total-rows": {
+   "axis": "dead-code",
+   "at": [
+    {"file": "csvtally/count.py", "lines": [13, 14], "quote": "def total_rows(counts):"}
+   ]
+  },
+  "swallowed-csv-error": {
+   "axis": "errors",
+   "at": [
+    {"file": "csvtally/reader.py", "lines": [12, 13], "quote": "except csv.Error:"}
+   ]
+  },
+  "duplicate-key-normaliser": {
+   "axis": "consistency",
+   "at": [
+    {"file": "csvtally/dedupe.py", "lines": [1, 2], "quote": "def _clean_key(value):"},
+    {"file": "csvtally/count.py", "lines": [4, 5], "quote": "def normalise_key(value):"}
+   ]
+  },
+  "untested-count-by": {
+   "axis": "tests",
+   "at": [
+    {"file": "csvtally/count.py", "lines": [8, 10], "quote": "def count_by(rows, index):"}
+   ]
+  }
+ },
+ "decoys": {
+  "reexport-read-rows": {
+   "axis": "dead-code",
+   "at": [
+    {"file": "csvtally/__init__.py", "lines": [1, 1], "quote": "from .reader import read_rows"},
+    {"file": "README.md", "lines": [26, 26], "quote": "from csvtally import read_rows"}
+   ]
+  },
+  "skip-blank-lines": {
+   "axis": "errors",
+   "at": [
+    {"file": "csvtally/reader.py", "lines": [9, 10], "quote": "if not row:"}
+   ]
+  },
+  "dispatch-handlers": {
+   "axis": "dead-code",
+   "at": [
+    {"file": "csvtally/cli.py", "lines": [24, 24], "quote": "HANDLERS = {\"count\": run_count, \"dedupe\": run_dedupe}"}
+   ]
+  },
+  "dedupe-tested": {
+   "axis": "tests",
+   "at": [
+    {"file": "tests/test_dedupe.py", "lines": [1, 1], "quote": "from csvtally.dedupe import dedupe_rows"}
+   ]
+  }
+ }
+}

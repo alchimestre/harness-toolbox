@@ -1,0 +1,9 @@
+{
+  "name": "logsift",
+  "version": "0.3.0",
+  "description": "Filter and summarise newline-delimited JSON logs",
+  "bin": { "logsift": "bin/logsift.js" },
+  "scripts": {
+    "test": "node --test test/"
+  }
+}
