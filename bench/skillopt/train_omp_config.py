@@ -13,7 +13,7 @@ import omp_config_env
 
 HERE = Path(__file__).resolve().parent
 RUN_DIR = HERE / "runs" / "omp-config"
-AGENT = HERE.parents[1] / "agents" / "omp-config.md"
+AGENT = HERE.parents[1] / "skills" / "omp-config" / "SKILL.md"
 REPS = 2
 
 os.chdir(HERE)

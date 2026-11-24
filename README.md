@@ -12,17 +12,17 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | readonly-lsp | extension | `extensions/readonly-lsp.ts` | Limits the `lsp` tool of `readonly-reviewer`, `review-high` and `review-low` to lookup actions; blocks `rename`, `rename_file`, `code_actions` and any action not on its list. Required by those agents. |
 | search-hang | skill | `skills/search-hang/SKILL.md` | The anti-hang policy for agents that read skills. |
 | ponytail-compatibility | skill | `skills/ponytail-compatibility/SKILL.md` | Makes applicable workflows and agent roles take precedence over conflicting Ponytail instructions of equal authority. |
+| omp-config | skill | `skills/omp-config/SKILL.md` | Changes omp settings (roles, overrides, fallback chains, efforts), reads each key back with `omp config get`, mirrors keys an example config already tracks. Never commits. |
+| flame-graph | skill | `skills/flame-graph/SKILL.md` | Draws a flame graph SVG of a process (`sample`, `py-spy`), a session or one agent in it (`src/session-flame.ts`: wall time, tokens or cost), or any hierarchy with a number per leaf. For a session it also writes a trace-event timeline. Needs `flamegraph.pl` and `bun`. |
 | code | rule | `rules/code.md` | Personal comment, readability, dependency, and repository portability constraints. |
 | writing | rule | `rules/writing.md` | Reader-facing document formats and ticket limits. |
 | readonly-reviewer | agent | `agents/readonly-reviewer.md` | Read-only change review: spec and standards axes kept separate, then correctness, security, performance, tests. Needs the diff passed in. |
 | review-high, review-low | agent | `agents/review-high.md`, `agents/review-low.md` | `readonly-reviewer` at high and low thinking. Bodies must stay identical to `readonly-reviewer`. |
 | task | agent | `agents/task.md` | Overrides the bundled `task`: its scope covers every spec violation the assignment names, so it fixes what it notices instead of reporting it. Hard passes vs bundled on `bench/small`, Haiku: low 180/234 vs 166/234, medium 131/162 vs 129/162, high 138/162 vs 132/162. The prompt was chosen on `expiry`, `callers` and `guard`; on the fixtures it never saw (`explore`, `task`, `tools`): low 69/90 vs 67/90, medium 75/90 vs 74/90, high 81/90 vs 76/90. |
 | task-fast | agent | `agents/task-fast.md` | `task` worker for when wall-clock time matters; pair with a faster, costlier model in `task.agentModelOverrides`. Body must stay identical to `agents/task.md`. |
-| omp-config | agent | `agents/omp-config.md` | Changes omp settings (roles, overrides, fallback chains, efforts), reads each key back with `omp config get`, mirrors keys an example config already tracks. Never commits. |
 | repo-audit | agent | `agents/repo-audit.md` | Read-only whole-repo audit: doc/code drift, inconsistency, dead code, inefficiency, untested behavior. Ranked findings with file:line evidence; writes a report only to a path the caller names. |
 | bench-runner | agent | `agents/bench-runner.md` | Runs a bench matrix through the repo's own run and score scripts in parallel. Waits out quota limits instead of switching models, discards runs answered by another model, regenerates the report page. |
 | git-chores | agent | `agents/git-chores.md` | Gitignore/exclude, untrack, prune worktrees and caches, commit, push. Refuses history rewrites, force pushes and `--no-verify` unless named in the assignment. |
-| flame-graph | agent | `agents/flame-graph.md` | Draws a flame graph SVG of a process (`sample`, `py-spy`), a session or one agent in it (`src/session-flame.ts`: wall time, tokens or cost), or any hierarchy with a number per leaf. For a session it also writes a trace-event timeline. Needs `flamegraph.pl` and `bun`. |
 | role map | config | `config/roles.example.yml` | Model roles, agent overrides, fallback chains and compaction thresholds chosen from the bench results. Merge into `~/.omp/agent/config.yml`. |
 | review bench | bench | `bench/review/` | Runs `readonly-reviewer` on diffs with planted bugs and behavior-preserving decoys (`<case>.diff` + `<case>.json`); scores recall, decoys flagged, cost, time per model and effort. |
 | small-role bench | bench | `bench/small/` | Scores a tool-call fix, a commit subject, the bundled scout prompt, a multi-file spec fix with a decoy file, an exploration fix (bug copies reachable only by search, a frozen decoy, a lookalike that must stay) and a find-every-caller fix per model and effort. |
@@ -54,7 +54,7 @@ ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
 3. Link the agents into the user agent directory:
 
 ```sh
-for agent in task readonly-reviewer review-high review-low task-fast omp-config repo-audit bench-runner git-chores flame-graph; do
+for agent in task readonly-reviewer review-high review-low task-fast repo-audit bench-runner git-chores; do
   ln -s /path/to/harness-toolbox/agents/$agent.md ~/.omp/agent/agents/$agent.md
 done
 ```

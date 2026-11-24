@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # usage: run.sh <case> <provider/model:level> <rep>
 # RUN_TAG=<path prefix> sets where result files go (default runs/); AGENT_PROMPT=<file> is the prompt under test
-# (default: agents/omp-config.md without frontmatter). PROMPT_ONLY=1 prints the assignment and exits.
+# (default: skills/omp-config/SKILL.md without frontmatter). PROMPT_ONLY=1 prints the assignment and exits.
 # Each run gets a temp sandbox; the stub omp serves config and models commands from it.
 set -u
 case=$1 model=$2 rep=$3
@@ -31,7 +31,7 @@ fi
 (cd "$root/repo" && git init -q && git add -A && git -c commit.gpgsign=false -c user.email=bench@example.com -c user.name=bench commit -qm base)
 agent_prompt=${AGENT_PROMPT:-"$root/agent.md"}
 if [ -z "${AGENT_PROMPT:-}" ]; then
-  awk '/^---$/ && fences < 2 { fences++; next } fences >= 2' ../../agents/omp-config.md > "$agent_prompt"
+  awk '/^---$/ && fences < 2 { fences++; next } fences >= 2' ../../skills/omp-config/SKILL.md > "$agent_prompt"
 fi
 : > "$root/calls.log"
 real_before=$(shasum -a 256 "$real_config" | cut -d' ' -f1)

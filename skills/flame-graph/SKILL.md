@@ -1,9 +1,6 @@
 ---
 name: flame-graph
-description: "Draws a Brendan Gregg flame graph (SVG) of whatever the assignment names: a running process, a harness session or one agent in it, or any hierarchy with a number per leaf (file sizes, test times, churn). For a session it can also write a timeline of its model and tool calls. Give it the subject, the measure, and where to write."
-tools: read, grep, glob, bash
-model:
-  - "@task"
+description: "Use when asked for a flame graph (SVG) of a running process, a harness session or one agent in it, or any hierarchy with a number per leaf (file sizes, test times, churn). For a session it can also write a timeline of its model and tool calls."
 ---
 
 You turn a subject into folded stacks and render them with `flamegraph.pl`. You measure and draw; you do not fix what the graph shows.
@@ -34,7 +31,7 @@ Every subject becomes lines of `root;child;leaf <count>`.
 
 - `sample` writes nothing when `-file` is a relative path.
 - `sample` shows a Python process as interpreter frames. `py-spy` shows Python functions and needs root on macOS.
-- `$toolbox` is the directory this agent file is linked from: `toolbox=$(dirname "$(dirname "$(realpath ~/.omp/agent/agents/flame-graph.md)")")`.
+- `$toolbox` is the checkout this skill lives in: `toolbox=$(dirname "$(dirname "$(dirname "$(realpath skill://flame-graph/SKILL.md)")")")`.
 - File sizes, as the model for "anything else": `find <dir> -type f -exec stat -f '%z %N' {} + | awk '{size=$1; sub(/^[0-9]+ /, ""); gsub(/;/, ","); gsub("/", ";"); print $0, size}'`. On Linux the `stat` format is `-c '%s %n'`.
 
 # Sessions and agents
@@ -45,7 +42,7 @@ Every subject becomes lines of `root;child;leaf <count>`.
 - `tokens` and `microusd` frames end in `model:<id>` and `input`, `output`, `cacheRead` or `cacheWrite`. Tool calls carry neither.
 - `ms` adds up each agent's model and tool time. Parallel tool calls and subagents each count in full, so the total can exceed the wall clock. A parent waiting on a subagent counts as its own `tool:` time beside the subagent's work. Time waiting for the user is not counted.
 - Model time is recorded. Tool time is recorded only where the transcript has a run time (`bash`); every other tool is estimated from the end of the model call that issued it to the tool's result, which includes time queued behind other calls of the batch. Name the estimated tools in the report.
-- Timeline, only when the assignment asks what happened when: `bun "$toolbox/src/session-flame.ts" <transcript.jsonl> trace > <name>.trace.json`. It is trace-event JSON for `ui.perfetto.dev` or `speedscope.app`: one process per agent, overlapping calls on separate rows. Each event's `interval` argument is `measured` or `dispatch to result`.
+- Timeline, only when the request asks what happened when: `bun "$toolbox/src/session-flame.ts" <transcript.jsonl> trace > <name>.trace.json`. It is trace-event JSON for `ui.perfetto.dev` or `speedscope.app`: one process per agent, overlapping calls on separate rows. Each event's `interval` argument is `measured` or `dispatch to result`.
 
 # Render
 
@@ -61,7 +58,7 @@ flamegraph.pl --title "<subject>: <measure>" --countname <unit> <name>.folded > 
 # Rules
 
 - Never `sudo`. A collector that needs root, or a process owned by another user: stop and report the exact command to run.
-- Do not start, stop or signal the subject process unless the assignment says to launch it.
+- Do not start, stop or signal the subject process unless the request says to launch it.
 - `flamegraph.pl` or `bun` missing: report `BLOCKED: <tool> not installed` and stop.
 - Write only inside the output directory.
 
