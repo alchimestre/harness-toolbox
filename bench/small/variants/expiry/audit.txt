@@ -1,0 +1,1 @@
+Find every place that stores or returns a session or token expiry and make each one comply with SPEC.md; expiries were computed several different ways, through helpers, re-exports and inline clock reads. node test.js covers one of them. Fix the source (not the test) and run node test.js until it prints ok. Reply with one line per file you changed.

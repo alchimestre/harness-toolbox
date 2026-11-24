@@ -13,7 +13,7 @@ HERE = Path(__file__).resolve().parent
 CASES = HERE / "runs" / "cases.json"
 SPLIT_DIR = HERE / "runs" / "split-by-fixture"
 # Held-out cases come from fixtures SkillOpt never trains on, so test measures transfer.
-FIXTURE_SPLIT = {"train": ("tools", "task", "explore"), "val": ("scout",), "test": ("callers",)}
+FIXTURE_SPLIT = {"train": ("tools", "task", "explore"), "val": ("scout",), "test": ("callers", "expiry", "guard")}
 
 os.chdir(HERE)
 CASES.parent.mkdir(exist_ok=True)

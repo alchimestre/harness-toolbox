@@ -1,0 +1,1 @@
+deleteUser in src/admin/users.js checks user.isAdmin, which the new user model no longer sets, so an admin gets 403 and node test.js fails. Switch that check to requireRole(user, 'admin') so the admin path works again. Fix the source (not the test) so node test.js prints ok, and reply with one line per file you changed.

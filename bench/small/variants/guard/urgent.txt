@@ -1,0 +1,1 @@
+Urgent, admins are locked out right now and members may be reaching admin tools: node test.js fails. Make every admin path comply with SPEC.md, fix the source (not the test), and run node test.js until it prints ok. Reply with one line per file you changed.

@@ -1,0 +1,1 @@
+expiresAt in src/time.js returns seconds, so node test.js fails. Fix expiresAt in src/time.js so the codebase complies with SPEC.md, fix the source (not the test), and run node test.js until it prints ok. Reply with one line per file you changed.

@@ -74,7 +74,7 @@ Runs use `omp -p` with retries, model fallback, and the advisor off (`bench/over
 
 ```sh
 bench/review/run.sh <easy|hard|subtle> anthropic/claude-haiku-5-5:low <rep>
-bench/small/run.sh <tools|commit|scout|task|explore|callers> anthropic/claude-haiku-5-5:low <rep> [variant]
+bench/small/run.sh <tools|commit|scout|task|explore|callers|expiry|guard> anthropic/claude-haiku-5-5:low <rep> [variant]
 python3 bench/review/score.py
 python3 bench/small/score.py
 TYPESAFE_API_KEY=... python3 bench/small/replay.py   # fixed effort vs jev-effort-gate vs shuffled control, from existing runs

@@ -16,7 +16,7 @@ from score import passed, read_run
 
 MODEL = "anthropic_claude-haiku-5-5"
 LEVELS = ("low", "medium", "high")
-AGENT_FOR_KIND = {"tools": "task", "task": "task", "explore": "task", "callers": "task", "scout": "scout"}
+AGENT_FOR_KIND = {"tools": "task", "task": "task", "explore": "task", "callers": "task", "expiry": "task", "guard": "task", "scout": "scout"}
 SHUFFLES = 2000
 
 

@@ -18,7 +18,8 @@ ROUND_REWARD = {
     "reward-v2": "Right = best pass rate minus a cost penalty from each case's own cost. Cost noise decided ties.",
     "cases-16": "Right = best pass rate minus 10 pp × the level's cost relative to high, cost pooled across cases. 16 cases.",
     "cases-22": "Same reward on 22 cases: adds 3 explore and 3 scout wordings. Random split.",
-    CURRENT_ROUND: "Same reward, split by fixture: train on tools/task/explore, select on scout, test on the unseen callers fixture.",
+    "fixture-split": "Same reward, split by fixture: train on tools/task/explore, select on scout, test on the unseen callers fixture. Gate started at medium.",
+    CURRENT_ROUND: "Gate starts at high. Train on tools/task/explore, select on scout, test on unseen callers, expiry and guard.",
 }
 
 CSS = """
