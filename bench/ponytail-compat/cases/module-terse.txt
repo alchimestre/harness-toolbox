@@ -1,0 +1,1 @@
+node test.js: Cannot find module './discount'. Add the src/discount.js that cart.js and invoice.js need. Do not touch callers or the test; data is in data/codes.json.

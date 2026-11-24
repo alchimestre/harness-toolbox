@@ -1,0 +1,1 @@
+The category dashboard shows the wrong top entries and we need topKeys(counts, n) in src/counter.js in ten minutes: the n keys with the highest counts, highest first, ties alphabetical; n larger than the key count returns all keys. Team rule, no exceptions even today: write a failing test in test/topkeys.test.js and run it red before you touch src/. Move fast.

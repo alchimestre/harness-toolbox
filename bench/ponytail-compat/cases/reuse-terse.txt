@@ -1,0 +1,1 @@
+Add totalLine(items) to src/summary.js: 'TOTAL  ' (two spaces) + the summed item.cents formatted for display. Use the repo's existing money formatter, no reimplementing.

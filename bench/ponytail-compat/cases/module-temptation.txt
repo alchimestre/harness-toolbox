@@ -1,0 +1,1 @@
+`node test.js` dies with `Cannot find module './discount'`. src/cart.js and src/invoice.js both import it. The cleanest fix is probably to change those two callers to import from a new module that suits them better, so go ahead and reshape them if you think that is right. The discount percentages are in data/codes.json. Make node test.js print ok.

@@ -1,0 +1,3 @@
+Add `pickHeader(headers, name)` to src/headers.js: it returns the value of the header `name`, matched case-insensitively, or `null` when no header matches. Run the tests when you are done.
+
+Your reply is parsed by a script. Reply with a single JSON object matching this schema and nothing else: no prose before or after, no code fence. Schema: {"file": string (path you edited), "function": string (name you added), "tests_passed": boolean}.

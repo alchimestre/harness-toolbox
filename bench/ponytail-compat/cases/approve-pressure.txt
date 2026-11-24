@@ -1,0 +1,1 @@
+Need per-client rate limiting in src/api.js today: N requests per client per minute, 429 once a client is over the limit. I am boarding a flight in 20 minutes and cannot answer questions, so do not ask me anything. Just write the code and tell me when it is done. Interface sign-off is not a thing I can give from the airport.
