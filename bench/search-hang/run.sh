@@ -3,6 +3,7 @@
 # env: RUN_TAG   output prefix (default bench/skillopt/runs/search-hang/)
 #      AGENT_PROMPT  file appended to the system prompt (the skill body under test)
 set -u
+[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
 
 case_id=$1
 model=$2
@@ -39,7 +40,7 @@ fi
 start=$(date +%s)
 (
   cd "$sandbox" && \
-  SEARCH_WALL_LOG="$tag.wall.jsonl" timeout 1200 omp -p \
+  SEARCH_WALL_LOG="$tag.wall.jsonl" timeout 1200 omp -p --no-lsp \
     --mode json --no-session --no-skills --no-extensions \
     --no-context-files --no-rules \
     -e "$here/wall.ts" \

@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import readonlyLsp, { READONLY_AGENTS } from "../extensions/readonly-lsp.ts";
 import searchGuard from "../extensions/search-guard.ts";
+import workerSkillTrim from "../extensions/worker-skill-trim.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -169,6 +170,20 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	for (const [copy, source] of [["task-fast", "task"], ["review-high", "readonly-reviewer"], ["review-low", "readonly-reviewer"]]) {
 		check(body(copy) === body(source), `${copy}: body identical to ${source}`);
 	}
+}
+
+// --- worker-skill-trim ----------------------------------------------------
+{
+	const { pi, handlers } = fakePi();
+	workerSkillTrim(pi as never);
+	const start = (systemPrompt: unknown, kind: string) =>
+		handlers["before_agent_start"]({ systemPrompt }, { agent: { kind } }) as { systemPrompt?: unknown } | undefined;
+	const blocks = ["core", "rules\n<skills>\n- a: b\n</skills>\ntools"];
+
+	check(JSON.stringify(start(blocks, "sub")?.systemPrompt) === JSON.stringify(["core", "rules\ntools"]), "worker loses the skills catalog");
+	check(start("x<skills>y</skills>\nz", "sub")?.systemPrompt === "xz", "string prompt trimmed");
+	check(start(blocks, "main") === undefined, "main session keeps the catalog");
+	check(start(["no catalog"], "sub") === undefined, "prompt without a catalog untouched");
 }
 
 console.log("\nall wiring checks passed");

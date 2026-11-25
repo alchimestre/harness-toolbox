@@ -1,6 +1,7 @@
 ---
 name: ponytail-compatibility
 alwaysApply: true
+agents: [main]
 description: >
   Resolve conflicts whenever Ponytail is active alongside another applicable
   skill, workflow, or agent role. The other instruction wins; retain compatible

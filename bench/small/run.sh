@@ -4,6 +4,7 @@
 # RUN_TAG=<absolute path prefix> overrides where the run's files go; AGENT_PROMPT (absolute file) is appended to the system prompt.
 # PROMPT_ONLY=1 prints the assignment and exits without running.
 set -u
+[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
 kind=$1 model=$2 rep=$3 variant=${4:-}
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
@@ -40,10 +41,8 @@ if [ -n "${PROMPT_ONLY:-}" ]; then printf '%s\n' "$prompt"; rm -r "$dir"; exit 0
 start=$(date +%s)
 rm -f "$tag.decoy" "$tag.result" "$tag.parts" "$tag.fails"
 append=(); [ -n "${AGENT_PROMPT:-}" ] && append=(--append-system-prompt "$AGENT_PROMPT")
-# A slot-queueing omp wrapper that honours OMP_RUN_TIMEOUT starts the clock after admission; plain omp needs timeout.
 run_omp=(timeout 300 omp)
-head -c 8192 "$(command -v omp)" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=300 omp)
-(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-context-files \
+(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-lsp --no-context-files \
   --config overlay.yml --tools "$tools" --model "$model" "${append[@]}" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"

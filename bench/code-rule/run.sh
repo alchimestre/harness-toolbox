@@ -4,6 +4,7 @@
 # Env: RUN_TAG overrides the output prefix; AGENT_PROMPT (file) is appended to the system prompt;
 # PROMPT_ONLY=1 prints the assignment and exits.
 set -u
+[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
 case_id=$1
 model=$2
 rep=$3
@@ -44,10 +45,8 @@ run_scorer() {
   fi
 }
 start=$SECONDS
-# A slot-queueing omp wrapper that honours OMP_RUN_TIMEOUT starts the clock after admission; plain omp needs timeout.
 run_omp=(timeout 1800 omp)
-head -c 8192 "$(command -v omp)" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=1800 omp)
-(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions \
+(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-lsp \
   --no-context-files --config overlay.yml --tools read,grep,glob,bash,edit,write \
   --model "$model" "${agent_args[@]+"${agent_args[@]}"}" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?

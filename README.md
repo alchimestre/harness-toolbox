@@ -10,6 +10,7 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | advisor-cross-family | extension | `extensions/advisor-cross-family.ts` | Moves the advisor role to another model family when the session's live model changes provider. Checks the configured role, not the model a fallback chain lands on. |
 | jev-effort-gate | extension | `extensions/jev-effort-gate.ts` | Moves a `task` subagent's thinking effort one step when the child starts (`task`, eval `agent()` and workpool spawns), from Jev signals on its assignment (stops-at-first-match risk, exact target, urgent) and provider quota. Other agents keep their configured level. Model and fallbacks stay as configured; each decision is logged as a `harness-toolbox.jev-effort-gate` session entry; fails open without `TYPESAFE_API_KEY`. |
 | readonly-lsp | extension | `extensions/readonly-lsp.ts` | Limits the `lsp` tool of `readonly-reviewer`, `review-high` and `review-low` to lookup actions; blocks `rename`, `rename_file`, `code_actions` and any action not on its list. Required by those agents. |
+| worker-skill-trim | extension | `extensions/worker-skill-trim.ts` | Removes the `<skills>` catalog from subagent system prompts; the main session keeps it, and workers still load a skill by name through `skill://<name>`. |
 | search-hang | skill | `skills/search-hang/SKILL.md` | The anti-hang policy for agents that read skills. |
 | ponytail-compatibility | skill | `skills/ponytail-compatibility/SKILL.md` | Makes applicable workflows and agent roles take precedence over conflicting Ponytail instructions of equal authority. |
 | omp-config | skill | `skills/omp-config/SKILL.md` | Changes omp settings (roles, overrides, fallback chains, efforts), reads each key back with `omp config get`, mirrors keys an example config already tracks. Never commits. |
@@ -38,6 +39,7 @@ extensions:
   - /path/to/harness-toolbox/extensions/advisor-cross-family.ts
   - /path/to/harness-toolbox/extensions/jev-effort-gate.ts
   - /path/to/harness-toolbox/extensions/readonly-lsp.ts
+  - /path/to/harness-toolbox/extensions/worker-skill-trim.ts
 skills:
   customDirectories:
     - /path/to/harness-toolbox/skills
@@ -95,6 +97,8 @@ TYPESAFE_API_KEY=... python3 bench/small/replay.py   # fixed effort vs jev-effor
 ```
 
 Each scorer fails when a run was answered by a model other than the one requested.
+
+Every `run.sh` waits for a slot in `bench/pool.pl`, a machine-wide pool shared fairly between worktrees, and its `timeout` starts once it has one. `BENCH_POOL_SLOTS` overrides the default cap of 12 concurrent runs.
 
 Review bench limits:
 - 17 cases; Haiku high finds 92–100% of planted defects on each and flags no decoy. Haiku low trails by 8–12 points on 6 cases.

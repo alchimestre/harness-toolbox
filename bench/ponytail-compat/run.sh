@@ -3,6 +3,7 @@
 # RUN_TAG=<absolute path prefix> overrides where the run's files go; AGENT_PROMPT (absolute file) is appended after ponytail.md.
 # PROMPT_ONLY=1 prints the user prompt and exits without running.
 set -u
+[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
 case_name=$1 model=$2 rep=$3
 here=$(cd "$(dirname "$0")" && pwd)
 fixture=${case_name%%-*}
@@ -16,10 +17,8 @@ cat "$here/ponytail.md" > "$system"
 [ -n "${AGENT_PROMPT:-}" ] && { printf '\n' >> "$system"; cat "$AGENT_PROMPT" >> "$system"; }
 rm -f "$tag.result" "$tag.parts" "$tag.fails"
 start=$(date +%s)
-# A slot-queueing omp wrapper that honours OMP_RUN_TIMEOUT starts the clock after admission; plain omp needs timeout.
 run_omp=(timeout 300 omp)
-head -c 8192 "$(command -v omp)" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=300 omp)
-(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-context-files --no-rules \
+(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-lsp --no-context-files --no-rules \
   --config overlay.yml --tools read,grep,glob,bash,edit,write --model "$model" --append-system-prompt "$system" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"

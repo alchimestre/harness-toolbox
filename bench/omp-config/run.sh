@@ -4,6 +4,7 @@
 # (default: skills/omp-config/SKILL.md without frontmatter). PROMPT_ONLY=1 prints the assignment and exits.
 # Each run gets a temp sandbox; the stub omp serves config and models commands from it.
 set -u
+[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
 case=$1 model=$2 rep=$3
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here" || exit 2
@@ -38,9 +39,8 @@ real_before=$(shasum -a 256 "$real_config" | cut -d' ' -f1)
 start=$(date +%s)
 rm -f "$tag".{result,parts,fails,calls,real,commits,secs}
 run_omp=(timeout 300 "$real_omp")
-head -c 8192 "$real_omp" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=300 "$real_omp")
 (cd "$root/repo" && PATH="$root/bin:$PATH" OMP_STUB_DIR="$root/cfg" OMP_STUB_LOG="$root/calls.log" \
-  "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-context-files --no-rules \
+  "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-lsp --no-context-files --no-rules \
   --config "$root/overlay.yml" --tools read,grep,glob,find,bash,edit --model "$model" \
   --append-system-prompt "$agent_prompt" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?

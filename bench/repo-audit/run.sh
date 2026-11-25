@@ -3,6 +3,7 @@
 # AGENT_PROMPT=<absolute file> is appended to the system prompt (default: the body of agents/repo-audit.md).
 # RUN_TAG=<absolute path prefix> overrides where the run's files go. PROMPT_ONLY=1 prints the assignment and exits.
 set -u
+[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
 case_=$1 model=$2 rep=$3
 repo_id=${case_%%-*} variant=${case_#*-}
 here=$(cd "$(dirname "$0")" && pwd)
@@ -30,10 +31,8 @@ git="git -c user.name=bench -c user.email=bench@example.invalid -c commit.gpgsig
 python3 check.py --manifest "$dir/repo" > "$dir/before.json"
 start=$(date +%s)
 rm -f "$tag".{result,parts,fails,detail.json,report.md}
-# A slot-queueing omp wrapper that honours OMP_RUN_TIMEOUT starts the clock after admission; plain omp needs timeout.
 run_omp=(timeout 900 omp)
-head -c 8192 "$(command -v omp)" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=900 omp)
-(cd "$dir/repo" && TMPDIR="$dir/tmp" "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions \
+(cd "$dir/repo" && TMPDIR="$dir/tmp" "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-lsp \
   --no-context-files --no-rules --config "$dir/overlay.yml" --tools read,grep,glob,find,bash,write \
   --model "$model" --append-system-prompt "$prompt_file" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?

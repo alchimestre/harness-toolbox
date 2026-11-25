@@ -3,6 +3,7 @@
 # agent: a file in agents/, a built-in omp agent, or a path to a prompt file; readonly-reviewer (default) logs to
 # runs/, others to runs/<agent>/. RUN_TAG=<absolute path prefix> overrides where the run's files go.
 set -u
+[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
 case_=$1 model=$2 rep=$3 agent=${4:-readonly-reviewer}
 prompt_file=
 [ -f "$agent" ] && prompt_file=$(realpath "$agent")
@@ -32,10 +33,8 @@ prompt="Follow the reviewer instructions in agent.md (ignore its frontmatter). R
 
 $(cat "$case_.diff")"
 start=$(date +%s)
-# A slot-queueing omp wrapper that honours OMP_RUN_TIMEOUT starts the clock after admission; plain omp needs timeout.
 run_omp=(timeout 300 omp)
-head -c 8192 "$(command -v omp)" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=300 omp)
-(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-context-files \
+(cd "$dir" && "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-lsp --no-context-files \
   --config overlay.yml --tools read,grep,glob,find --model "$model" "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"

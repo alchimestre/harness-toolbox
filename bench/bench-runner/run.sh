@@ -3,6 +3,7 @@
 # RUN_TAG=<absolute path prefix> overrides where the run's files go; AGENT_PROMPT (absolute file) is appended to the system prompt.
 # PROMPT_ONLY=1 prints the assignment and exits without running.
 set -u
+[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
 scenario=$1 model=$2 rep=$3
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
@@ -17,8 +18,7 @@ start=$(date +%s)
 rm -rf "$tag.result" "$tag.parts" "$tag.fails" "$tag.log"
 append=(); [ -n "${AGENT_PROMPT:-}" ] && append=(--append-system-prompt "$AGENT_PROMPT")
 run_omp=(timeout 900 omp)
-head -c 8192 "$(command -v omp)" | grep -aq OMP_RUN_TIMEOUT && run_omp=(env OMP_RUN_TIMEOUT=900 omp)
-(cd "$dir" && PYTHONDONTWRITEBYTECODE=1 "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-context-files --no-rules \
+(cd "$dir" && PYTHONDONTWRITEBYTECODE=1 "${run_omp[@]}" -p --mode json --no-session --no-skills --no-extensions --no-lsp --no-context-files --no-rules \
   --config "$here/../overlay.yml" --tools read,grep,glob,find,bash,write --model "$model" ${append[@]+"${append[@]}"} "$prompt") > "$tag.jsonl" 2> "$tag.err"
 status=$?
 echo "$(( $(date +%s) - start ))" > "$tag.secs"
