@@ -8,7 +8,8 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 const SCHEDULER = new URL("../src/subagent-scheduler.pl", import.meta.url).pathname;
 // A parent blocked on its children must not hold a slot, or queued children starve behind it.
-const CHILD_WAIT_TOOLS: Record<string, true> = { task: true, wait: true };
+// eval counts: its agent() and workpool children run while the eval call waits on them.
+const CHILD_WAIT_TOOLS: Record<string, true> = { task: true, wait: true, eval: true };
 
 type ToolCallEvent = { toolName: string };
 type ChildContext = { agent?: { kind?: string }; cwd: string };

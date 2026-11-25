@@ -202,6 +202,7 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	const call = (handlers: Record<string, Handler>, toolName: string, ctx: unknown = sub) =>
 		handlers["tool_call"]({ toolName }, ctx) as Promise<void> | undefined;
 	const ADMISSION_POLL_MS = 1500;
+	const ADMISSION_TIMEOUT_MS = 3000;
 	let secondAdmitted = false;
 
 	await call(first.handlers, "read");
@@ -214,7 +215,14 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	await queued;
 	check(secondAdmitted, "waiting on children frees the slot for the queued subagent");
 	check((await call(second.handlers, "read", { agent: { kind: "main" }, cwd: "/" })) === undefined, "main session never queues");
-	second.handlers["agent_end"]({}, sub);
+	let evalChildAdmitted = false;
+	const evalChild = call(first.handlers, "read")?.then(() => {
+		evalChildAdmitted = true;
+	});
+	await call(second.handlers, "eval");
+	await Promise.race([evalChild, Bun.sleep(ADMISSION_TIMEOUT_MS)]);
+	check(evalChildAdmitted, "a subagent awaiting eval children frees its slot for them");
+	first.handlers["agent_end"]({}, sub);
 }
 
 console.log("\nall wiring checks passed");
