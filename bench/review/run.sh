@@ -3,7 +3,7 @@
 # agent: a file in agents/, a built-in omp agent, or a path to a prompt file; readonly-reviewer (default) logs to
 # runs/, others to runs/<agent>/. RUN_TAG=<absolute path prefix> overrides where the run's files go.
 set -u
-[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
+[ -n "${SUBAGENT_SCHEDULER_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../../src/subagent-scheduler.pl" bash "$0" "$@"
 case_=$1 model=$2 rep=$3 agent=${4:-readonly-reviewer}
 prompt_file=
 [ -f "$agent" ] && prompt_file=$(realpath "$agent")

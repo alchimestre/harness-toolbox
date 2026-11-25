@@ -4,7 +4,7 @@
 # (default: skills/omp-config/SKILL.md without frontmatter). PROMPT_ONLY=1 prints the assignment and exits.
 # Each run gets a temp sandbox; the stub omp serves config and models commands from it.
 set -u
-[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
+[ -n "${SUBAGENT_SCHEDULER_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../../src/subagent-scheduler.pl" bash "$0" "$@"
 case=$1 model=$2 rep=$3
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here" || exit 2

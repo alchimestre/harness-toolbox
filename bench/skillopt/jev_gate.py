@@ -19,7 +19,7 @@ from skillopt.model import claude_backend
 
 SMALL = Path(__file__).resolve().parents[1] / "small"
 OVERLAY = SMALL.parent / "overlay.yml"
-POOL = SMALL.parent / "pool.pl"
+SCHEDULER = SMALL.parents[1] / "src" / "subagent-scheduler.pl"
 SIGNALS = ("exhaustive", "exact", "urgent")
 LEVELS = ("low", "medium", "high")
 # Utility = pass rate − COST_WEIGHT × the level's pooled cost relative to high: 10% cheaper is worth 1 pp.
@@ -159,8 +159,8 @@ def run_omp_print(*, system, prompt, model, tools, tool_choice, return_message, 
     if tools or tool_choice or return_message or attachments:
         raise RuntimeError("the omp optimizer handles plain text calls only")
     thinking = claude_backend.REASONING_EFFORT or "low"
-    # The timeout sits inside the pool so time spent queued for a slot never counts against the call.
-    args = ["perl", str(POOL), "timeout", str(timeout or 300), "omp", "-p", "--mode", "json", "--no-session",
+    # The timeout sits inside the scheduler so time spent queued for a slot never counts against the call.
+    args = ["perl", str(SCHEDULER), "timeout", str(timeout or 300), "omp", "-p", "--mode", "json", "--no-session",
             "--no-tools", "--no-extensions", "--no-skills",
             "--no-context-files", "--no-rules", "--no-title", "--config", str(OVERLAY),
             "--model", model, "--thinking", thinking, "--system-prompt", system, prompt]

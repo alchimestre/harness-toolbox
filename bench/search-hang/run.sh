@@ -3,7 +3,7 @@
 # env: RUN_TAG   output prefix (default bench/skillopt/runs/search-hang/)
 #      AGENT_PROMPT  file appended to the system prompt (the skill body under test)
 set -u
-[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
+[ -n "${SUBAGENT_SCHEDULER_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../../src/subagent-scheduler.pl" bash "$0" "$@"
 
 case_id=$1
 model=$2

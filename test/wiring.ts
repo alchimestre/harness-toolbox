@@ -1,11 +1,14 @@
 // Wires each extension against a fake harness API. Run: bun test/wiring.ts
 
 import { mock } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import readonlyLsp, { READONLY_AGENTS } from "../extensions/readonly-lsp.ts";
 import searchGuard from "../extensions/search-guard.ts";
 import workerSkillTrim from "../extensions/worker-skill-trim.ts";
+import subagentScheduler from "../extensions/subagent-scheduler.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -184,6 +187,34 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	check(start("x<skills>y</skills>\nz", "sub")?.systemPrompt === "xz", "string prompt trimmed");
 	check(start(blocks, "main") === undefined, "main session keeps the catalog");
 	check(start(["no catalog"], "sub") === undefined, "prompt without a catalog untouched");
+}
+
+// --- subagent-scheduler ---------------------------------------------------
+{
+	process.env.SUBAGENT_SCHEDULER_DIR = mkdtempSync(join(tmpdir(), "subagent-scheduler-"));
+	process.env.SUBAGENT_SCHEDULER_SLOTS = "1";
+	delete process.env.SUBAGENT_SCHEDULER_SLOT;
+	const first = fakePi();
+	const second = fakePi();
+	subagentScheduler(first.pi as never);
+	subagentScheduler(second.pi as never);
+	const sub = { agent: { kind: "sub" }, cwd: "/work/project" };
+	const call = (handlers: Record<string, Handler>, toolName: string, ctx: unknown = sub) =>
+		handlers["tool_call"]({ toolName }, ctx) as Promise<void> | undefined;
+	const ADMISSION_POLL_MS = 1500;
+	let secondAdmitted = false;
+
+	await call(first.handlers, "read");
+	const queued = call(second.handlers, "read")?.then(() => {
+		secondAdmitted = true;
+	});
+	await Bun.sleep(ADMISSION_POLL_MS);
+	check(!secondAdmitted, "second subagent waits while the only slot is held");
+	await call(first.handlers, "wait");
+	await queued;
+	check(secondAdmitted, "waiting on children frees the slot for the queued subagent");
+	check((await call(second.handlers, "read", { agent: { kind: "main" }, cwd: "/" })) === undefined, "main session never queues");
+	second.handlers["agent_end"]({}, sub);
 }
 
 console.log("\nall wiring checks passed");

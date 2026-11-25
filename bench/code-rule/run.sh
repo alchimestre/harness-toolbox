@@ -4,7 +4,7 @@
 # Env: RUN_TAG overrides the output prefix; AGENT_PROMPT (file) is appended to the system prompt;
 # PROMPT_ONLY=1 prints the assignment and exits.
 set -u
-[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
+[ -n "${SUBAGENT_SCHEDULER_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../../src/subagent-scheduler.pl" bash "$0" "$@"
 case_id=$1
 model=$2
 rep=$3

@@ -3,7 +3,7 @@
 # AGENT_PROMPT=<absolute file> is appended to the system prompt (default: the body of agents/repo-audit.md).
 # RUN_TAG=<absolute path prefix> overrides where the run's files go. PROMPT_ONLY=1 prints the assignment and exits.
 set -u
-[ -n "${BENCH_POOL_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../pool.pl" bash "$0" "$@"
+[ -n "${SUBAGENT_SCHEDULER_SLOT:-}${PROMPT_ONLY:-}" ] || exec perl "$(dirname "$0")/../../src/subagent-scheduler.pl" bash "$0" "$@"
 case_=$1 model=$2 rep=$3
 repo_id=${case_%%-*} variant=${case_#*-}
 here=$(cd "$(dirname "$0")" && pwd)

@@ -11,6 +11,7 @@ Extensions, rules, and skills for the `omp` coding harness. Each tool is indepen
 | jev-effort-gate | extension | `extensions/jev-effort-gate.ts` | Moves a `task` subagent's thinking effort one step when the child starts (`task`, eval `agent()` and workpool spawns), from Jev signals on its assignment (stops-at-first-match risk, exact target, urgent) and provider quota. Other agents keep their configured level. Model and fallbacks stay as configured; each decision is logged as a `harness-toolbox.jev-effort-gate` session entry; fails open without `TYPESAFE_API_KEY`. |
 | readonly-lsp | extension | `extensions/readonly-lsp.ts` | Limits the `lsp` tool of `readonly-reviewer`, `review-high` and `review-low` to lookup actions; blocks `rename`, `rename_file`, `code_actions` and any action not on its list. Required by those agents. |
 | worker-skill-trim | extension | `extensions/worker-skill-trim.ts` | Removes the `<skills>` catalog from subagent system prompts; the main session keeps it, and workers still load a skill by name through `skill://<name>`. |
+| subagent-scheduler | extension | `extensions/subagent-scheduler.ts` | Makes every subagent wait for a slot from `src/subagent-scheduler.pl` at its first tool call and hold it until its run ends; a subagent gives its slot back while it calls `task` or `wait`. The main session and subagents inside a bench run are not queued. Needs `extensionHandlers.toolCallTimeoutMs` above the longest expected wait. |
 | search-hang | skill | `skills/search-hang/SKILL.md` | The anti-hang policy for agents that read skills. |
 | ponytail-compatibility | skill | `skills/ponytail-compatibility/SKILL.md` | Makes applicable workflows and agent roles take precedence over conflicting Ponytail instructions of equal authority. |
 | omp-config | skill | `skills/omp-config/SKILL.md` | Changes omp settings (roles, overrides, fallback chains, efforts), reads each key back with `omp config get`, mirrors keys an example config already tracks. Never commits. |
@@ -40,6 +41,9 @@ extensions:
   - /path/to/harness-toolbox/extensions/jev-effort-gate.ts
   - /path/to/harness-toolbox/extensions/readonly-lsp.ts
   - /path/to/harness-toolbox/extensions/worker-skill-trim.ts
+  - /path/to/harness-toolbox/extensions/subagent-scheduler.ts
+extensionHandlers:
+  toolCallTimeoutMs: 600000
 skills:
   customDirectories:
     - /path/to/harness-toolbox/skills
@@ -98,7 +102,7 @@ TYPESAFE_API_KEY=... python3 bench/small/replay.py   # fixed effort vs jev-effor
 
 Each scorer fails when a run was answered by a model other than the one requested.
 
-Every `run.sh` waits for a slot in `bench/pool.pl`, a machine-wide pool shared fairly between worktrees, and its `timeout` starts once it has one. `BENCH_POOL_SLOTS` overrides the default cap of 12 concurrent runs.
+Every `run.sh` and every omp subagent waits for a slot from `src/subagent-scheduler.pl`, shared fairly between worktrees (bench runs) and project directories (subagents); a bench run's `timeout` starts once it has one. The cap starts at 12 and adapts every 2 s: it grows by 1 while runs wait, CPU idle is at least 25% and at least 15% of memory is free; it drops by a quarter on swapping, memory pressure, thermal throttling, a no-op taking over 40 ms to spawn, or CPU idle under 10% for two samples. Changes are logged to `~/.cache/subagent-scheduler/control.log`. `SUBAGENT_SCHEDULER_SLOTS` fixes the cap and turns adaptation off.
 
 Review bench limits:
 - 17 cases; Haiku high finds 92–100% of planted defects on each and flags no decoy. Haiku low trails by 8–12 points on 6 cases.
