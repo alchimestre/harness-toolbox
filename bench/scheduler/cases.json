@@ -1,0 +1,9 @@
+[
+  {"id": "smoke", "split": "smoke", "gate": false, "bench": "code-rule", "owners": 2, "in_flight": 4, "cells": 6, "join_gap_s": 0},
+  {"id": "solo", "split": "dev", "gate": true, "bench": "code-rule", "owners": 1, "in_flight": 16, "cells": 200, "join_gap_s": 0},
+  {"id": "trio", "split": "dev", "gate": false, "bench": "code-rule", "owners": 3, "in_flight": 16, "cells": 120, "join_gap_s": 0},
+  {"id": "late", "split": "final", "gate": false, "bench": "code-rule", "owners": 3, "in_flight": 16, "cells": 100, "join_gap_s": 40},
+  {"id": "small-duo", "split": "final", "gate": false, "bench": "small", "owners": 2, "in_flight": 16, "cells": 96, "join_gap_s": 0,
+   "model": "anthropic/claude-haiku-5-5:low",
+   "prompts": ["tools", "commit", "scout", "task", "explore", "callers", "expiry", "guard"]}
+]
