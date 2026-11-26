@@ -1,19 +1,68 @@
+<p align="center">
+  <img src="assets/readme/hero.svg" width="100%" alt="harness-toolbox: keeps parallel omp subagents within machine limits.">
+</p>
+
 # harness-toolbox
 
 Extensions, skills, rules, and agents for the `omp` coding harness. Each piece is independent; load only what you use.
 
-## How the pieces fit
+## Setup
+
+### Model roles
+
+Values come from `config/roles.example.yml`. The suffix after `:` is the thinking effort.
+
+| Role | Model | Fallback chain |
+|---|---|---|
+| `default`, `plan` | `anthropic/claude-opus-5-5:medium` | `openai-codex/gpt-6.2-sol` |
+| `slow` | `anthropic/claude-opus-5-5:high` | `openai-codex/gpt-6.2-sol` |
+| `task` | `anthropic/claude-haiku-5-5:high` | `openai-codex/gpt-6.2-sol` |
+| `designer` | `anthropic/claude-sonnet-5-5:medium` | `openai-codex/gpt-6.2-sol` |
+| `smol` | `anthropic/claude-haiku-5-5:low` | `openai-codex/gpt-6-luna`, `openai-codex/gpt-6.2-sol`, `anthropic/claude-sonnet-5-5` |
+| `commit` | `anthropic/claude-haiku-5-5:low` | `openai-codex/gpt-6.2-sol` |
+| `tiny` | `anthropic/claude-haiku-5-5:off` | `openai-codex/gpt-6-luna`, `openai-codex/gpt-6.2-sol`, `anthropic/claude-sonnet-5-5` |
+| `vision` | `openai-codex/gpt-5.6-terra:medium` | `anthropic/claude-sonnet-5-5`, `openai-codex/gpt-6.2-sol` |
+| `advisor` | `openai-codex/gpt-6.2-sol:high` | `openai-codex/gpt-6.2-sol` |
+
+Agent overrides under `task.agentModelOverrides`:
+
+| Agent | Model |
+|---|---|
+| `task-fast` | `anthropic/claude-sonnet-5-5:high` |
+| `scout` | `anthropic/claude-sonnet-5-5:low` |
+| `reviewer`, `readonly-reviewer` | `anthropic/claude-haiku-5-5:high` |
+| `review-low` | `anthropic/claude-haiku-5-5:low` |
+| `review-high`, `repo-audit` | `anthropic/claude-sonnet-5-5:medium` |
+| `sonic` | `openai-codex/gpt-6-luna:medium` |
+| `librarian` | `openai-codex/gpt-6-luna:low` |
+
+### Session flow
 
 ```mermaid
 flowchart LR
-  omp["omp harness"] --> ext["extensions"]
-  omp --> skills["skills"]
-  omp --> rules["rules"]
-  omp --> agents["agents"]
-  ext --> sched["subagent-scheduler extension"]
-  bench["bench/"] --> pl["src/subagent-scheduler.pl"]
-  sched --> pl
+  main["main agent"] -->|task| sub["subagent"]
+  sub -->|on start| gate["jev-effort-gate"]
+  sub -->|first tool call| slot["subagent-scheduler slot"]
+  main -.->|advisor role| adv["advisor-cross-family"]
 ```
+
+- `jev-effort-gate` runs when a subagent starts. It moves only `task`, one effort level at most, within `low`–`high`.
+- A subagent takes a scheduler slot at its first tool call. It releases the slot on a `task`, `wait`, or `eval` call and when its run ends.
+- `advisor-cross-family` runs at session start and after a fallback is applied. It picks the first of `openai-codex/gpt-6.2-sol`, `anthropic/claude-sonnet-5-5`, `deepseek/deepseek-v4-pro` in a different family from the live model. Subagent sessions skip it.
+
+### Guards
+
+| Guard | Extension | Rule |
+|---|---|---|
+| Search budget | `search-guard` | 15 `web_search` calls per session, shared by the main agent and its subagents. The 16th is blocked. A result starting with `Error:` forbids retries. |
+| Read-only reviewers | `readonly-lsp` | `readonly-reviewer`, `review-high`, and `review-low` may use only lookup `lsp` actions such as `definition`, `references`, and `hover`. |
+| Effort gate | `jev-effort-gate` | Raises `task` one level for an exhaustive request without a named target, unless provider quota is at 95%. Drops it one level for an exact or urgent request, or when quota reaches 80%. Other agents keep their configured level. |
+
+### Machine
+
+- Tuned on a macOS laptop. The scheduler's cap signals (`iostat`, `vm_stat`, `sysctl`, and a spawn probe) are macOS tools.
+- The cap starts at 12 and moves between 1 and 32 from CPU idle, free memory, swapping, memory pressure, and spawn latency.
+- `SUBAGENT_SCHEDULER_SLOTS=<n>` fixes the cap on any platform. Details: [Subagent scheduler](#subagent-scheduler).
 
 ## Requirements
 
@@ -198,7 +247,7 @@ Recorded results:
 - The main session and subagents inside a bench run are not queued. A bench run holds one slot for its whole omp process.
 - The cap starts at 12 and adapts every 2 s:
   - grows by 1 while runs wait, CPU idle is at least 25%, and at least 15% of memory is free;
-  - drops by a quarter on swapping, memory pressure, a no-op taking over 40 ms to spawn, or CPU idle under 10% for two samples;
+  - drops to a quarter below the runs in flight on swapping, memory pressure, a no-op taking over 40 ms to spawn, or CPU idle under 10% for two samples;
   - does not drop again until runs above the new cap have finished.
 - Changes are logged to `~/.cache/subagent-scheduler/control.log`.
 - `SUBAGENT_SCHEDULER_SLOTS=<n>` fixes the cap and turns adaptation off.
