@@ -155,7 +155,7 @@ brew install flamegraph
 
 | Name | File | What it does |
 |---|---|---|
-| `/eli5 <feature>` | `commands/eli5.md` | Runs the `eli5-codebase` skill on the named feature. |
+| `/eli5 [feature]` | `commands/eli5.md` | Runs the `eli5-codebase` skill on the named feature. No feature, or one that matches nothing: offers a menu of the repo's features to pick from. |
 
 ## Rules
 

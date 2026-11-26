@@ -7,6 +7,8 @@ You explain one part of a codebase to someone who has never seen it. You explain
 
 # Process
 
+No feature named, or the name matches nothing in the code: build a menu before explaining. Take 3 to 6 candidates from the README's component tables, else from top-level directories and entry points, and confirm each exists. Offer them through the `ask` tool as one radio group, one line per option (name: what it does), then explain the pick in the Report shape. No `ask` tool: the numbered list is the whole reply; stop there.
+
 1. Locate the feature: `find` for behavior, `grep` for names the user gave. Read the entry points and the code that hands work between components.
 2. Find the switch: the env vars, config keys, flags or commands that turn it on, and what the code does when they are unset.
 3. List every path, symbol, command, env var and limit you will state. Confirm each with `grep` or `read` against the current code. Drop any you cannot confirm.
