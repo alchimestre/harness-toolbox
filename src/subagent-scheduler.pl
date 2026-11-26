@@ -1,8 +1,8 @@
 #!/usr/bin/env perl
 # Subagent scheduler: admits each bench run or omp subagent into a machine-wide slot, shared fairly between owners,
-# then execs the command while holding the slot until the command and its children exit.
+# then runs the command and holds the slot until it exits; children it leaves running do not keep the slot.
 # The cap adapts: a control loop (started on demand, exits when nothing runs or waits) raises it while CPU,
-# memory and responsiveness have room and cuts it on swapping, memory pressure, throttling or lag.
+# memory and responsiveness have room and cuts it on swapping, memory pressure or lag.
 # usage: subagent-scheduler.pl <command> [args...]     subagent-scheduler.pl --control
 # env: SUBAGENT_SCHEDULER_SLOTS (fixed cap, disables the control loop), SUBAGENT_SCHEDULER_OWNER
 #      (fair-share key, default: worktree name), SUBAGENT_SCHEDULER_DIR
@@ -10,7 +10,8 @@ use strict;
 use warnings;
 use Cwd qw(abs_path);
 use Errno qw(ESRCH);
-use Fcntl qw(:flock F_GETFD F_SETFD FD_CLOEXEC);
+use Fcntl qw(:flock);
+use File::Path qw(make_path);
 use File::Basename qw(basename dirname);
 use POSIX qw(setsid strftime);
 use Time::HiRes qw(sleep time);
@@ -34,7 +35,6 @@ use constant SATURATED_TICKS => 2;
 use constant AVAILABLE_MEMORY_FLOOR => 0.15;
 use constant SWAPOUT_PAGES_LIMIT => 256;
 use constant PRESSURE_WARN_LEVEL => 2;
-use constant FULL_SPEED_PCT => 100;
 use constant PROBE_LIMIT_MS => 40;
 use constant PROBE_RUNS => 3;
 
@@ -48,8 +48,8 @@ sub main {
     die "usage: subagent-scheduler.pl <command> [args...]\n" unless @ARGV;
     die "subagent-scheduler: SUBAGENT_SCHEDULER_SLOTS must be @{[MIN_SLOTS]}..@{[MAX_SLOTS]}\n"
         if defined $fixed_cap && !valid_cap($fixed_cap);
-    mkdir $dir;
-    mkdir "$dir/wait";
+    make_path("$dir/wait");
+    die "subagent-scheduler: cannot create $dir/wait\n" unless -d "$dir/wait";
     return control_loop() if $ARGV[0] eq '--control';
     $owner = $ENV{SUBAGENT_SCHEDULER_OWNER} // basename(dirname(dirname(abs_path($0))));
     $owner =~ s/[^\w.-]/_/g;
@@ -68,9 +68,21 @@ sub run_in_slot {
     }
     unlink $waiter;
     $ENV{SUBAGENT_SCHEDULER_SLOT} = $slot;
-    # Perl opens files close-on-exec; the slot lock must survive exec to stay held by the command.
-    fcntl($slot_fh, F_SETFD, fcntl($slot_fh, F_GETFD, 0) & ~FD_CLOEXEC) or die "subagent-scheduler: fcntl: $!\n";
-    exec { $ARGV[0] } @ARGV or die "subagent-scheduler: exec $ARGV[0]: $!\n";
+    exit run_command();
+}
+
+# The slot lock stays in this process (Perl opens it close-on-exec), so it frees when the command exits
+# even if the command leaves background children running.
+sub run_command {
+    my $pid;
+    # Set before fork so a signal between fork and here cannot kill this process and orphan the command.
+    $SIG{$_} = sub { kill $_[0] => $pid if $pid } for qw(INT TERM HUP);
+    $pid = fork // die "subagent-scheduler: fork: $!\n";
+    unless ($pid) {
+        exec { $ARGV[0] } @ARGV or die "subagent-scheduler: exec $ARGV[0]: $!\n";
+    }
+    1 until waitpid($pid, 0) == $pid;
+    return $? & 127 ? 128 + ($? & 127) : $? >> 8;
 }
 
 sub try_admit {
@@ -79,7 +91,7 @@ sub try_admit {
     return if time - $last < START_SPACING_SECONDS;
     my $cap = current_cap();
     my ($free, $held) = scan_slots();
-    return if held_total($held) >= $cap || !defined $free || !my_turn($held, $cap);
+    return if held_total($held) >= $cap || !defined $free || !my_turn($owner, $held, $cap, live_waiters());
     open my $fh, '>>', "$dir/slot.$free" or die "subagent-scheduler: slot.$free: $!\n";
     flock($fh, LOCK_EX | LOCK_NB) or return;
     write_file("$dir/slot.$free.owner", $owner);
@@ -91,9 +103,11 @@ sub current_cap {
     return $fixed_cap if defined $fixed_cap;
     my $age = time - ((stat "$dir/cap")[9] // 0);
     my $cap = read_file("$dir/cap");
-    return $cap if $age < CAP_STALE_SECONDS && defined $cap && valid_cap($cap);
+    my $valid = defined $cap && valid_cap($cap);
+    return $cap if $age < CAP_STALE_SECONDS && $valid;
     start_control_loop();
-    return DEFAULT_SLOTS;
+    # A stale cap is the loop's last choice; the default would undo its cuts until the loop catches up.
+    return $valid ? $cap : DEFAULT_SLOTS;
 }
 
 sub start_control_loop {
@@ -137,13 +151,13 @@ sub held_total {
 }
 
 sub my_turn {
-    my ($held, $cap) = @_;
-    my %waiting = map { $_ => 1 } live_waiters();
-    my %active = (%waiting, $owner => 1, map { $_ => 1 } keys %$held);
+    my ($me, $held, $cap, @waiting) = @_;
+    my %waiting = map { $_ => 1 } @waiting;
+    my %active = (%waiting, $me => 1, map { $_ => 1 } keys %$held);
     my $owners = keys %active;
     my $share = int(($cap + $owners - 1) / $owners);
-    return 1 if ($held->{$owner} // 0) < $share;
-    my @starved = grep { $_ ne $owner && ($held->{$_} // 0) < $share } keys %waiting;
+    return 1 if ($held->{$me} // 0) < $share;
+    my @starved = grep { $_ ne $me && ($held->{$_} // 0) < $share } keys %waiting;
     return !@starved;
 }
 
@@ -205,7 +219,9 @@ sub next_cap {
 sub shrink {
     my ($state, $load, $now, @strain) = @_;
     return if $now - $state->{changed} < BACKOFF_INTERVAL_SECONDS;
-    my $running = $state->{cap} < $load->{held} ? $state->{cap} : $load->{held};
+    # Runs above the cap are a cut still draining; cutting again before they finish overshoots.
+    return if $load->{held} > $state->{cap};
+    my $running = $load->{held};
     my $cut = int($running * BACKOFF_FRACTION) || 1;
     my $cap = $running - $cut > MIN_SLOTS ? $running - $cut : MIN_SLOTS;
     return if $cap >= $state->{cap};
@@ -218,7 +234,6 @@ sub strain_reasons {
     my @reasons;
     push @reasons, 'swapping' if $machine->{swapout_pages} > SWAPOUT_PAGES_LIMIT;
     push @reasons, 'memory pressure' if $machine->{pressure_level} >= PRESSURE_WARN_LEVEL;
-    push @reasons, 'thermal throttling' if $machine->{cpu_speed_pct} < FULL_SPEED_PCT;
     push @reasons, 'slow to respond' if $machine->{probe_ms} > PROBE_LIMIT_MS;
     return @reasons;
 }
@@ -230,13 +245,12 @@ sub sample_machine {
     my ($available_fraction, $swapouts) = sample_memory();
     my $swapout_pages = $swapouts - $$swapouts_ref;
     $$swapouts_ref = $swapouts;
-    my ($speed) = `pmset -g therm` =~ /CPU_Speed_Limit\s*=\s*(\d+)/;
     return (
-        cpu_idle_pct => $cpu_idle // 0,
+        # An unparsed sample sits at the floor: it neither counts as saturated nor allows growth.
+        cpu_idle_pct => $cpu_idle // CPU_IDLE_FLOOR_PCT,
         available_fraction => $available_fraction,
         swapout_pages => $swapout_pages,
         pressure_level => 0 + `sysctl -n kern.memorystatus_vm_pressure_level`,
-        cpu_speed_pct => $speed // FULL_SPEED_PCT,
         probe_ms => probe_ms(),
     );
 }

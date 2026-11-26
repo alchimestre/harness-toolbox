@@ -16,13 +16,15 @@ type ChildContext = { agent?: { kind?: string }; cwd: string };
 type Slot = { holder: ChildProcess; admitted: Promise<void> };
 
 // An abandoned subagent gets neither agent_end nor session_shutdown; without this its slot leaks.
-// shortcut: a single tool call running longer than this loses its slot mid-run; track in-flight calls if that matters.
+// A call still in flight (a long build, a test suite) is not idle, so it gets the longer limit.
 const IDLE_RELEASE_MS = 15 * 60_000;
+const IN_FLIGHT_RELEASE_MS = 2 * 60 * 60_000;
 const IDLE_CHECK_MS = 30_000;
 
 export default function subagentScheduler(pi: ExtensionAPI, scheduler = SCHEDULER): void {
 	let slot: Slot | undefined;
 	let lastActivity = 0;
+	let inFlight = 0;
 	const touch = () => {
 		lastActivity = Date.now();
 	};
@@ -31,11 +33,13 @@ export default function subagentScheduler(pi: ExtensionAPI, scheduler = SCHEDULE
 		slot = undefined;
 	};
 	const idleCheck = setInterval(() => {
-		if (slot && Date.now() - lastActivity > IDLE_RELEASE_MS) release();
+		const limit = inFlight > 0 ? IN_FLIGHT_RELEASE_MS : IDLE_RELEASE_MS;
+		if (slot && Date.now() - lastActivity > limit) release();
 	}, IDLE_CHECK_MS);
 	idleCheck.unref();
 
 	pi.on("tool_call", async (event: ToolCallEvent, ctx: ChildContext) => {
+		inFlight++;
 		// A bench run already holds a slot for its whole omp process, subagents included.
 		if (ctx.agent?.kind !== "sub" || process.env.SUBAGENT_SCHEDULER_SLOT !== undefined) return;
 		if (Object.hasOwn(CHILD_WAIT_TOOLS, event.toolName)) return release();
@@ -47,7 +51,10 @@ export default function subagentScheduler(pi: ExtensionAPI, scheduler = SCHEDULE
 		});
 		touch();
 	});
-	pi.on("tool_result", touch);
+	pi.on("tool_result", () => {
+		inFlight = Math.max(0, inFlight - 1);
+		touch();
+	});
 	pi.on("agent_end", release);
 	pi.on("session_shutdown", () => {
 		release();
