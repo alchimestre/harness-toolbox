@@ -13,7 +13,7 @@ use Errno qw(ESRCH);
 use Fcntl qw(:flock);
 use File::Path qw(make_path);
 use File::Basename qw(basename dirname);
-use POSIX qw(setsid strftime);
+use POSIX qw(setsid strftime sigprocmask SIG_BLOCK SIG_UNBLOCK SIGINT SIGTERM SIGHUP);
 use Time::HiRes qw(sleep time);
 
 # 12 keeps CPU idle >= 24% and shell latency at baseline with code-rule Haiku cells; the control loop starts here.
@@ -75,12 +75,17 @@ sub run_in_slot {
 # even if the command leaves background children running.
 sub run_command {
     my $pid;
-    # Set before fork so a signal between fork and here cannot kill this process and orphan the command.
-    $SIG{$_} = sub { kill $_[0] => $pid if $pid } for qw(INT TERM HUP);
+    my $forwarded = POSIX::SigSet->new(SIGINT, SIGTERM, SIGHUP);
+    # Blocked until $pid is set: a signal arriving earlier would find no command to forward to and be lost.
+    sigprocmask(SIG_BLOCK, $forwarded);
+    $SIG{$_} = sub { kill $_[0] => $pid } for qw(INT TERM HUP);
     $pid = fork // die "subagent-scheduler: fork: $!\n";
     unless ($pid) {
+        $SIG{$_} = 'DEFAULT' for qw(INT TERM HUP);
+        sigprocmask(SIG_UNBLOCK, $forwarded);
         exec { $ARGV[0] } @ARGV or die "subagent-scheduler: exec $ARGV[0]: $!\n";
     }
+    sigprocmask(SIG_UNBLOCK, $forwarded);
     1 until waitpid($pid, 0) == $pid;
     return $? & 127 ? 128 + ($? & 127) : $? >> 8;
 }

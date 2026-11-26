@@ -11,6 +11,9 @@ my $scheduler = abs_path(dirname(__FILE__) . '/../src/subagent-scheduler.pl');
 require $scheduler;
 
 use constant NOW => 1000;
+use constant SIGTERM_NUMBER => 15;
+use constant WAIT_TRIES => 50;
+use constant WAIT_STEP_SECONDS => 0.1;
 use constant LONG_AGO => 0;
 use constant ROOMY => { cpu_idle_pct => 50, available_fraction => 0.5, swapout_pages => 0, pressure_level => 1, probe_ms => 5 };
 use constant PRESSURED => { %{+ROOMY}, pressure_level => 2 };
@@ -66,6 +69,39 @@ sub state_at { return { cap => $_[0], changed => LONG_AGO, saturated => 0 } }
     my $start = time;
     system('perl', $scheduler, 'true');
     cmp_ok(time - $start, '<', 3, 'the slot frees when the command exits, not when its children do');
+
+    my $held = "$ENV{SUBAGENT_SCHEDULER_DIR}/held";
+    my $holder = spawn('perl', $scheduler, 'sh', '-c', "touch '$held'; exec sleep 30");
+    wait_for(sub { -e $held });
+    my $marker = "$ENV{SUBAGENT_SCHEDULER_DIR}/ran";
+    my $queued = spawn('perl', $scheduler, 'touch', $marker);
+    wait_for(sub { () = glob "$ENV{SUBAGENT_SCHEDULER_DIR}/wait/*" });
+    kill TERM => $queued;
+    waitpid $queued, 0;
+    ok(!-e $marker, 'a run cancelled while queued never starts');
+    ok(!glob("$ENV{SUBAGENT_SCHEDULER_DIR}/wait/*"), 'a run cancelled while queued leaves the queue');
+
+    kill TERM => $holder;
+    waitpid $holder, 0;
+    is($? >> 8, 128 + SIGTERM_NUMBER, 'TERM reaches the running command');
+    $start = time;
+    system('perl', $scheduler, 'true');
+    cmp_ok(time - $start, '<', 3, 'a cancelled run frees its slot');
+}
+
+sub spawn {
+    my $pid = fork // die "fork: $!\n";
+    exec @_ or die "exec $_[0]: $!\n" unless $pid;
+    return $pid;
+}
+
+sub wait_for {
+    my ($ready) = @_;
+    for (1 .. WAIT_TRIES) {
+        return if $ready->();
+        select undef, undef, undef, WAIT_STEP_SECONDS;
+    }
+    die "condition never held\n";
 }
 
 done_testing();
