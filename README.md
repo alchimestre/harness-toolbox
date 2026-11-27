@@ -150,6 +150,7 @@ brew install flamegraph
 | omp-config | `skills/omp-config/SKILL.md` | Changes omp settings (roles, overrides, fallback chains, efforts), reads each key back with `omp config get`, and mirrors keys an example config already tracks. Never commits. |
 | flame-graph | `skills/flame-graph/SKILL.md` | Draws a flame graph SVG of a process (`sample`, `py-spy`), a session or one agent in it (`src/session-flame.ts`: wall time, tokens, or cost), or any hierarchy with a number per leaf. For a session it also writes a trace-event timeline. Needs `flamegraph.pl` and `bun`. |
 | eli5-codebase | `skills/eli5-codebase/SKILL.md` | Explains a codebase feature in three sections (What it is, Where it lives, How to use it) with an analogy, one sequence diagram, a file and symbol table, and a setup block. States only paths, symbols and commands confirmed in the code. |
+| crossroads-survey | `skills/crossroads-survey/SKILL.md` | Finds closed-choice picks in a repo's prompts, harness code, product code and session history; classifies them with a decision model (Jev); ranks them; pilots the top ones; writes `bench-runner` directories (`src/crossroads/survey.ts`). Needs `bun`, `ast-grep` and `TYPESAFE_API_KEY`. |
 
 ## Commands
 

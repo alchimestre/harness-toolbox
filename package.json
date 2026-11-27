@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test/simulate.ts && bun test/wiring.ts && bun test/effort-policy.ts && bun test/session-flame.ts && perl test/subagent-scheduler.t"
+    "test": "bun test/simulate.ts && bun test/wiring.ts && bun test/effort-policy.ts && bun test/session-flame.ts && bun test/crossroads.ts && perl test/subagent-scheduler.t"
   }
 }

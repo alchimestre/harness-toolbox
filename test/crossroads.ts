@@ -1,0 +1,161 @@
+// Checks crossroads-survey logic without network calls. Run: bun test/crossroads.ts
+
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { DecisionBackend, Question } from "../src/crossroads/backend.ts";
+import { effectiveConfidence, isFallback } from "../src/crossroads/backend.ts";
+import type { BenchCase, RunResult } from "../src/crossroads/bench.ts";
+import { HOLDOUT_CASES, PILOT_CASES, runCase, scoreBench, writeBench } from "../src/crossroads/bench.ts";
+import { attachPicks, codeUnits, markdownBlocks, promptUnits, routingUnits } from "../src/crossroads/extract.ts";
+import type { Classified } from "../src/crossroads/records.ts";
+import { applyHumanEdits, buildRecords, carryForward, gateStatus, rank, recordId } from "../src/crossroads/records.ts";
+import { runPilot } from "../src/crossroads/pilot.ts";
+
+function check(condition: unknown, label: string): void {
+	if (!condition) throw new Error(`FAIL ${label}`);
+	console.log(`ok ${label}`);
+}
+
+// --- effective confidence and fallback --------------------------------------
+{
+	const yesNo: Question = { kind: "yes_no", instructions: "" };
+	const choice: Question = { kind: "choice", instructions: "", labels: { a: "", b: "" } };
+	check(effectiveConfidence("yes_no", { pYes: 0.1 }) === 0.9, "yes/no confidence is max(p, 1-p)");
+	check(!isFallback(yesNo, { pYes: 0.1 }), "confident 'no' is not a fallback");
+	check(isFallback(yesNo, { pYes: 0.55 }), "uncertain yes/no falls back");
+	check(isFallback(yesNo, {}), "missing yes/no value falls back");
+	check(isFallback(choice, { label: "c", confidence: 0.95 }), "label outside contract falls back");
+	check(isFallback(choice, { label: "a", confidence: 1.5 }), "confidence outside [0,1] falls back");
+	check(!isFallback(choice, { label: "a", probabilities: { a: 0.8, b: 0.2 } }), "choice without confidence uses top probability");
+}
+
+// --- record id ---------------------------------------------------------------
+check(recordId("prompt text", "Pick  A or B") === recordId("prompt text", "pick a or b"), "id ignores case and whitespace");
+check(recordId("prompt text", "pick a or b") !== recordId("harness code", "pick a or b"), "id includes source");
+
+// --- markdown units ----------------------------------------------------------
+{
+	const markdown = ["---", "description: x", "---", "# View", "- Flame graph: when asked for cost", "- Timeline, only when the request asks what happened when", "", "Decide whether to cache the result or recompute it."].join("\n");
+	const blocks = markdownBlocks(markdown);
+	check(blocks.length === 2 && blocks[0].list, "conditional sibling bullets form one list unit");
+	check(blocks[0].text.includes("Timeline"), "list unit keeps every alternative");
+	check(blocks[1].heading === "View", "block carries nearest heading");
+}
+
+// --- repo extraction, merge, carry-forward -----------------------------------
+const root = mkdtempSync(join(tmpdir(), "crossroads-"));
+for (const [name, text] of [["a", "Review code."], ["b", "Run benchmarks."]]) {
+	mkdirSync(join(root, "agents"), { recursive: true });
+	writeFileSync(join(root, "agents", `${name}.md`), `---\ndescription: ${text}\n---\n\nDecide whether the change needs a spec review or not.\n`);
+}
+mkdirSync(join(root, "extensions"));
+writeFileSync(join(root, "extensions", "gate.ts"), "export function gate(event: { prompt: string }) {\n\tif (/urgent/i.test(event.prompt)) return 'fast';\n\tif (count > 3) return 'slow';\n}\n");
+writeFileSync(join(root, "classify.py"), "def route(client, message):\n    out = client.chat(messages=[{'role': 'user', 'content': 'Answer yes or no: ' + message.body}])\n    return out == 'yes'\n");
+mkdirSync(join(root, "test"));
+writeFileSync(join(root, "test", "fixture.ts"), "export function fixture(event: { prompt: string }) {\n\tif (/urgent/i.test(event.prompt)) return 'fast';\n}\n");
+
+const units = attachPicks([...promptUnits(root), ...codeUnits(root)], [{ kind: "agent", choice: "a" }, { kind: "agent", choice: "b" }]);
+const routing = units.find((unit) => unit.heading === "agent routing");
+check(routing?.options?.a === "Review code.", "routing catalog unit lists agent descriptions");
+check(routing?.occurrences?.count === 2, "transcript picks attach to the routing catalog");
+check(units.filter((unit) => unit.class === "harness branch").length === 1, "only the text-reading harness branch is extracted");
+check(units.some((unit) => unit.class === "llm closed choice" && unit.location.startsWith("classify.py")), "closed-answer LLM call is extracted");
+{
+	const installed = mkdtempSync(join(tmpdir(), "crossroads-installed-"));
+	writeFileSync(join(installed, "scout.md"), "---\ndescription: Explore code.\n---\n");
+	writeFileSync(join(installed, "a.md"), "---\ndescription: Installed copy.\n---\n");
+	const catalog = routingUnits(root, [installed]).find((unit) => unit.heading === "agent routing");
+	check(catalog?.options?.scout === "Explore code.", "installed agents join the routing catalog");
+	check(catalog?.options?.a === "Review code.", "the target's own agent overrides an installed one");
+	check(catalog?.excerpt === routing?.excerpt, "catalog record id is unchanged by installed agents");
+}
+
+const backend: DecisionBackend = { name: "fake", limits: { maxStateTokens: 32_000, maxOptions: 255, maxLevels: 10 }, usdPerInputToken: 0, ask: async () => ({ answers: {}, ms: 0, inputTokens: 0 }) };
+const allPass = { crossroads: { pYes: 0.9 }, closed_set: { pYes: 0.9 }, independent: { pYes: 0.9 }, rule_decidable: { pYes: 0.1 }, irreplaceable: { pYes: 0.1 }, kind: { label: "yes_no" } };
+const classified: Classified[] = units.map((unit) => ({ unit, answers: allPass, ms: 150 }));
+const records = buildRecords(classified, backend);
+{
+	const nearCuts = { ...allPass, closed_set: { pYes: 0.72 }, independent: { pYes: 0.28 } };
+	const [nearRecord] = buildRecords([{ unit: units[0], answers: nearCuts, ms: 150 }], backend);
+	check(nearRecord.gates["closed set"].status === "unknown" && nearRecord.gates.independent.status === "unknown", "p within the dead band of a gate cut stays unknown");
+}
+{
+	const borderline = (pYes: number): Classified[] => [{ unit: units[0], answers: { ...allPass, crossroads: { pYes } }, ms: 150 }];
+	const knownId = recordId(units[0].source, units[0].excerpt);
+	check(buildRecords(borderline(0.32), backend).length === 0, "a new record inside the review-floor band is not added");
+	check(buildRecords(borderline(0.27), backend, new Set([knownId])).length === 1, "a previous record inside the review-floor band is kept");
+	check(buildRecords(borderline(0.24), backend, new Set([knownId])).length === 0, "a previous record below the band is dropped");
+}
+const review = records.find((record) => record.excerpt.startsWith("Decide whether"));
+check(review?.locations.length === 2, "identical excerpts in two files merge into one record");
+check(gateStatus(review!) === "unknown" && review!.gates.fallback.status === "unknown", "unaccepted fallback keeps gates unknown, not failed");
+check(rank(records)[0].class === "llm closed choice", "llm closed choice ranks first");
+
+const next = buildRecords(classified, backend);
+review!.fallback.accepted = true;
+carryForward(next, records);
+next.forEach(applyHumanEdits);
+const carried = next.find((record) => record.id === review!.id);
+check(carried?.fallback.accepted && gateStatus(carried) === "pass", "accepted fallback carries forward by id and passes the gate");
+{
+	const catalogRecord = (labels: Record<string, string>) => ({ ...records.find((record) => record.heading === "agent routing")!, question: { kind: "choice" as const, instructions: "pick", labels, input: "text", reference: "logs" } });
+	const fresh = [catalogRecord({ a: "", scout: "" })];
+	carryForward(fresh, [{ ...catalogRecord({ a: "" }), fallback: { proposal: "x", accepted: true } }]);
+	check(fresh[0].question.labels?.scout !== undefined && fresh[0].fallback.accepted, "fresh catalog labels survive carry-forward; human fields still carry");
+	const pilotBackend: DecisionBackend = { ...backend, ask: async () => ({ answers: { decision: { label: "a", confidence: 0.9 } }, ms: 1, inputTokens: 1 }) };
+	const outcome = await runPilot(fresh[0], [{ input: "x", logged: "a" }, { input: "y", logged: "uninstalled" }], pilotBackend);
+	check(typeof outcome.result === "object" && outcome.result.outsideLabels === 1, "pilot drops samples whose logged pick is outside the labels");
+}
+
+// --- benchmark pass bars ------------------------------------------------------
+function fullMatrix(cases: BenchCase[], make: (decider: RunResult["decider"], i: number, rep: number) => RunResult): RunResult[] {
+	return cases.flatMap((_, i) => [1, 2, 3, 4, 5].flatMap((rep) => [make("model", i, rep), make("current", i, rep)]));
+}
+{
+	const cases: BenchCase[] = Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, split: i < 3 ? "pilot" : "holdout", input: "", reference: "a", referenceSource: "blind human" }));
+	const results = fullMatrix(cases, (decider, i, rep) => ({ case: `c${i}`, decider, rep, label: decider === "model" && i === 3 ? "b" : "a", fallback: false, ms: 100, usd: decider === "model" ? 0.00001 : 0.001 }));
+	const llm = scoreBench({ class: "llm closed choice", budgetMs: 2_000 }, cases, results);
+	check(llm.table.model.pilot.accuracy === 1, "pilot split scored separately");
+	check(!llm.checks.accuracy && !llm.checks.passed, "holdout accuracy drop over 2 points fails");
+	const rule = scoreBench({ class: "rule pretending to judge", budgetMs: 2_000 }, cases, results);
+	check(!("cost" in rule.checks), "code deciders skip the cost bar");
+	const throws = (results: RunResult[]) => {
+		try {
+			scoreBench({ class: "llm closed choice", budgetMs: 2_000 }, cases, results);
+			return false;
+		} catch {
+			return true;
+		}
+	};
+	check(throws([]), "empty results are rejected, not scored as a pass");
+	check(throws(results.slice(1)), "a missing rep is rejected");
+	check(throws([...results, results[0]]), "a duplicate cell is rejected");
+}
+
+// --- generated bench directory, end to end ------------------------------------
+{
+	const benchDir = join(root, "bench", "x");
+	const cases: BenchCase[] = Array.from({ length: PILOT_CASES + HOLDOUT_CASES }, (_, i) => ({ id: `k${i}`, split: i < PILOT_CASES ? "pilot" : "holdout", input: `case ${i}`, reference: "a", referenceSource: "blind human" }));
+	const record = { ...buildRecords(classified, backend)[0], class: "llm closed choice" as const, pilot: { passed: true }, question: { kind: "choice" as const, instructions: "pick", labels: { a: "", b: "" }, input: "text", reference: "human" } };
+	writeBench(record, cases, benchDir);
+	const contractPath = join(benchDir, "contract.json");
+	const contract = JSON.parse(readFileSync(contractPath, "utf8"));
+	contract.currentDecider.command = `echo '{"label":"a","usd":0.001}'`;
+	writeFileSync(contractPath, JSON.stringify(contract));
+	const viaScript = spawnSync(join(benchDir, "run"), ["current", "k0", "1"], { encoding: "utf8" });
+	check(JSON.parse(viaScript.stdout).label === "a" && JSON.parse(viaScript.stdout).rep === 1, "generated run script answers one cell");
+	const fake: DecisionBackend = { ...backend, usdPerInputToken: 1e-8, ask: async () => ({ answers: { decision: { label: "a", confidence: 0.9 } }, ms: 150, inputTokens: 100 }) };
+	const results: RunResult[] = [];
+	for (const item of cases) for (let rep = 1; rep <= 5; rep++) for (const decider of ["model", "current"]) results.push(await runCase(benchDir, decider, item.id, rep, fake));
+	const resultsPath = join(root, "results.jsonl");
+	const score = (lines: RunResult[]) => {
+		writeFileSync(resultsPath, lines.map((line) => JSON.stringify(line)).join("\n"));
+		return spawnSync(join(benchDir, "score"), [resultsPath], { encoding: "utf8" });
+	};
+	check(score([]).status !== 0, "generated score script rejects an empty results file");
+	check(score(results.slice(0, results.length / 2)).status !== 0, "generated score script rejects a partial matrix");
+	const full = score(results);
+	check(full.status === 0 && JSON.parse(full.stdout).checks.passed === true, "generated score script passes a complete matrix");
+}

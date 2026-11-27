@@ -1,0 +1,238 @@
+import { spawnSync } from "node:child_process";
+import { globSync, readFileSync } from "node:fs";
+import { basename, dirname, join, relative } from "node:path";
+
+export type Source = "prompt text" | "harness code" | "session" | "other repo";
+export type CrossroadsClass = "llm closed choice" | "prompt instruction" | "harness branch" | "rule pretending to judge";
+
+export type Unit = {
+	source: Source;
+	class: CrossroadsClass;
+	location: string;
+	heading: string;
+	excerpt: string; // identity text: what a human would recognise as the decision point
+	context: string; // what the classifier reads
+	options?: Record<string, string>;
+	occurrences?: Occurrences;
+};
+
+export type Occurrences = { count: number; samples: Pick[] };
+export type Pick = { kind: string; choice: string; input?: string; session?: string; callId?: string };
+
+const IGNORED = /(^|\/)(node_modules|\.git|\.scratch|dist|build|vendor|forks)\//;
+const TEST_FILE = /\/(tests?|__tests__|spec|fixtures)\/|\.(test|spec)\.[jt]sx?$|\/test_[^/]*\.py$|_test\.py$|\/conftest\.py$/;
+const MIN_BLOCK_CHARS = 20;
+const MIN_CONDITION_ITEMS = 2;
+const MAX_CONTEXT_CHARS = 6_000;
+const SAMPLES_PER_KIND = 5;
+
+const LEXICON =
+	/\b(decide|choose|pick|whether|prefer|otherwise|unless)\b|\b(if|when) (the )?(user|task|request)\b|\b\w+ or \w+\b/i;
+const LIST_ITEM = /^\s*([-*+]|\d+\.)\s+|^\s*\|/;
+const CONDITION_LEAD = /^(\*\*[^*]{1,60}\*\*:?|`[^`]{1,60}`[^:.]{0,40}:|[^:.`]{1,40}:)\s|^(when|if|only when|unless)\b|^[^,.]{1,40},\s*(only )?(when|if|unless)\b/i;
+
+export function listFiles(root: string, pattern: string): string[] {
+	return globSync(pattern, { cwd: root }).filter((path) => !IGNORED.test(`/${path}`)).sort();
+}
+
+export function promptFiles(root: string): string[] {
+	const patterns = ["**/SKILL.md", "**/agents/*.md", "**/rules/*.md", "**/AGENTS.md", "**/CLAUDE.md"];
+	return [...new Set(patterns.flatMap((pattern) => listFiles(root, pattern)))].sort();
+}
+
+export function promptUnits(root: string, installedAgentDirs: string[] = []): Unit[] {
+	const units: Unit[] = [];
+	for (const path of promptFiles(root)) {
+		for (const block of markdownBlocks(readFileSync(join(root, path), "utf8"))) {
+			if (!block.list && (block.text.length <= MIN_BLOCK_CHARS || !LEXICON.test(block.text))) continue;
+			units.push({
+				source: "prompt text",
+				class: "prompt instruction",
+				location: `${path}:${block.line}`,
+				heading: block.heading,
+				excerpt: block.text,
+				context: `${block.heading}\n${block.text}`,
+			});
+		}
+	}
+	return [...units, ...routingUnits(root, installedAgentDirs)];
+}
+
+type Block = { heading: string; text: string; line: number; list: boolean };
+
+// shortcut: lists and paragraphs only; nested list levels flatten into the parent list.
+export function markdownBlocks(markdown: string): Block[] {
+	const lines = markdown.split("\n");
+	const start = frontmatterEnd(lines);
+	const blocks: Block[] = [];
+	let heading = "";
+	let fenced = false;
+	let group: { line: number; items: string[]; list: boolean } | undefined;
+	const flush = () => {
+		if (group) blocks.push(...groupBlocks(heading, group));
+		group = undefined;
+	};
+	for (let index = start; index < lines.length; index++) {
+		const line = lines[index];
+		if (line.startsWith("```")) fenced = !fenced;
+		if (fenced || line.startsWith("```")) continue;
+		if (line.startsWith("#") || !line.trim()) {
+			flush();
+			if (line.startsWith("#")) heading = line.replace(/^#+\s*/, "").trim();
+			continue;
+		}
+		const isItem = LIST_ITEM.test(line);
+		if (group && isItem !== group.list && !(group.list && /^\s+/.test(line))) flush();
+		group ??= { line: index + 1, items: [], list: isItem };
+		if (isItem || !group.list) group.items.push(line.trim());
+		else group.items[group.items.length - 1] += ` ${line.trim()}`;
+	}
+	flush();
+	return blocks;
+}
+
+function groupBlocks(heading: string, group: { line: number; items: string[]; list: boolean }): Block[] {
+	if (!group.list) return [{ heading, text: group.items.join(" "), line: group.line, list: false }];
+	const items = group.items.map((item) => item.replace(LIST_ITEM, ""));
+	const conditional = items.filter((item) => CONDITION_LEAD.test(item)).length;
+	if (conditional >= MIN_CONDITION_ITEMS) return [{ heading, text: group.items.join("\n"), line: group.line, list: true }];
+	return group.items.map((item, offset) => ({ heading, text: item, line: group.line + offset, list: false }));
+}
+
+function frontmatterEnd(lines: string[]): number {
+	if (lines[0] !== "---") return 0;
+	const close = lines.indexOf("---", 1);
+	return close === -1 ? 0 : close + 1;
+}
+
+export function description(markdown: string): string | undefined {
+	const match = markdown.match(/^description:\s*(.+)$/m);
+	return match?.[1].trim().replace(/^["']|["']$/g, "");
+}
+
+// installedAgentDirs: agent definition dirs outside the target, lowest precedence first; the target's own agents win.
+export function routingUnits(root: string, installedAgentDirs: string[] = []): Unit[] {
+	const catalogs: Array<[string, string, (path: string) => string]> = [
+		["agent", "**/agents/*.md", (path) => basename(path, ".md")],
+		["skill", "**/SKILL.md", (path) => basename(dirname(path))],
+	];
+	const units: Unit[] = [];
+	for (const [kind, pattern, nameOf] of catalogs) {
+		const options: Record<string, string> = {};
+		const sources = kind === "agent" ? [...installedAgentDirs.map((dir) => [dir, "*.md"]), [root, pattern]] : [[root, pattern]];
+		for (const [dir, glob] of sources) {
+			for (const path of listFiles(dir, glob)) {
+				const text = description(readFileSync(join(dir, path), "utf8"));
+				if (text) options[nameOf(path)] = text;
+			}
+		}
+		if (Object.keys(options).length < MIN_CONDITION_ITEMS) continue;
+		units.push(catalogUnit(kind, pattern, options));
+	}
+	return units;
+}
+
+export function catalogUnit(kind: string, location: string, options: Record<string, string>): Unit {
+	const lines = Object.entries(options).map(([name, text]) => `- ${name}: ${text}`);
+	return {
+		source: location === "session" ? "session" : "prompt text",
+		class: "llm closed choice",
+		location,
+		heading: `${kind} routing`,
+		excerpt: `Choose which ${kind} handles the request.`,
+		context: `Choose which ${kind} handles the request, from:\n${lines.join("\n")}`.slice(0, MAX_CONTEXT_CHARS),
+		options,
+	};
+}
+
+// Transcript picks attach to the routing catalog of the same kind; a kind without a catalog gets its own unit.
+export function attachPicks(units: Unit[], picks: Pick[]): Unit[] {
+	const byKind = Map.groupBy(picks, (pick) => pick.kind);
+	const extra: Unit[] = [];
+	for (const [kind, group] of byKind) {
+		const occurrences = { count: group.length, samples: group.slice(0, SAMPLES_PER_KIND) };
+		const catalog = units.find((unit) => unit.heading === `${kind} routing`);
+		if (catalog) {
+			catalog.occurrences = occurrences;
+			continue;
+		}
+		const seen = Object.fromEntries([...new Set(group.map((pick) => pick.choice))].map((choice) => [choice, choice]));
+		extra.push({ ...catalogUnit(kind, "session", seen), occurrences });
+	}
+	return [...units, ...extra];
+}
+
+const TEXT_SUBJECT = /\b\w*(prompt|message|assignment|instruction|request|task|text|content|body|title|description|comment|query)s?\b/i;
+const JUDGING_TEST = /\.test\(|re\.(search|match|fullmatch)\(|\.match\(|\.includes\(|\bin\s+[A-Z_]{2,}|\bin\s*[[({]|[=!]==?\s*["'`]|\.startsWith\(|\.endswith\(|\.startswith\(|\.lower\(\)|\.toLowerCase\(\)/;
+const CLOSED_ANSWER = /response_format|json_schema|z\.enum|Literal\[|generateObject|tool_choice|yes or no|one of:|respond with only|classify|[=!]==?\s*["'](yes|no|true|false)["']/i;
+const PROMPT_ARGUMENT = /\b(messages|prompt|system)\s*[:=]/;
+const HARNESS_PATH = /^(extensions|hooks)\//;
+
+const LANGUAGES = [
+	{ name: "TypeScript", glob: "**/*.{ts,tsx,mts,cts,js,mjs}", branch: ["if_statement", "ternary_expression", "switch_statement"], call: "call_expression", fn: ["function_declaration", "arrow_function", "method_definition", "function_expression"] },
+	{ name: "Python", glob: "**/*.py", branch: ["if_statement", "conditional_expression", "match_statement"], call: "call", fn: ["function_definition"] },
+];
+
+type Match = { ruleId: string; text: string; file: string; range: { start: { line: number }; end: { line: number } } };
+
+export function codeUnits(root: string): Unit[] {
+	return LANGUAGES.flatMap((language) => {
+		const files = listFiles(root, language.glob).filter((path) => !TEST_FILE.test(`/${path}`));
+		if (!files.length) return [];
+		const matches = astMatches(root, language, files);
+		return [...branchUnits(matches), ...llmCallUnits(matches)];
+	});
+}
+
+function astMatches(root: string, language: (typeof LANGUAGES)[number], files: string[]): Match[] {
+	const kinds = (ids: string[]) => `{any: [${ids.map((id) => `{kind: ${id}}`).join(", ")}]}`;
+	const rules = [
+		`id: branch\nlanguage: ${language.name}\nrule: ${kinds(language.branch)}`,
+		`id: call\nlanguage: ${language.name}\nrule: {kind: ${language.call}}`,
+		`id: fn\nlanguage: ${language.name}\nrule: ${kinds(language.fn)}`,
+	].join("\n---\n");
+	const result = spawnSync("ast-grep", ["scan", "--inline-rules", rules, "--json=stream", ...files], { cwd: root, encoding: "utf8", maxBuffer: 1 << 30 });
+	if (result.error) throw new Error(`ast-grep unavailable: ${result.error.message} (brew install ast-grep)`);
+	return result.stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line) as Match);
+}
+
+function enclosing(matches: Match[], target: Match): Match | undefined {
+	const inside = (fn: Match) => fn.file === target.file && fn.range.start.line <= target.range.start.line && fn.range.end.line >= target.range.end.line;
+	return matches.filter((m) => m.ruleId === "fn" && inside(m)).sort((a, b) => a.text.length - b.text.length)[0];
+}
+
+const STRING_LITERAL = /(["'`])(?:\\.|(?!\1).)*\1/g;
+
+function branchUnits(matches: Match[]): Unit[] {
+	return matches
+		.filter((m) => m.ruleId === "branch")
+		.filter((m) => {
+			const condition = m.text.split("\n")[0];
+			const code = condition.replace(STRING_LITERAL, '""');
+			return TEXT_SUBJECT.test(code) && JUDGING_TEST.test(condition);
+		})
+		.map((m) => {
+			const harness = HARNESS_PATH.test(m.file);
+			return codeUnit(matches, m, harness ? "harness code" : "other repo", harness ? "harness branch" : "rule pretending to judge");
+		});
+}
+
+function llmCallUnits(matches: Match[]): Unit[] {
+	return matches
+		.filter((m) => m.ruleId === "call" && PROMPT_ARGUMENT.test(m.text))
+		.filter((m) => CLOSED_ANSWER.test(enclosing(matches, m)?.text ?? m.text))
+		.filter((m, index, calls) => !calls.some((outer, j) => j !== index && outer.file === m.file && outer.text.length > m.text.length && outer.text.includes(m.text)))
+		.map((m) => codeUnit(matches, m, HARNESS_PATH.test(m.file) ? "harness code" : "other repo", "llm closed choice"));
+}
+
+function codeUnit(matches: Match[], m: Match, source: Source, unitClass: CrossroadsClass): Unit {
+	const fn = enclosing(matches, m);
+	return {
+		source,
+		class: unitClass,
+		location: `${m.file}:${m.range.start.line + 1}`,
+		heading: fn?.text.split("\n")[0].trim() ?? relative(".", m.file),
+		excerpt: m.text.split("\n")[0].trim(),
+		context: (fn?.text ?? m.text).slice(0, MAX_CONTEXT_CHARS),
+	};
+}
