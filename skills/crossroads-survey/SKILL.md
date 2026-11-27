@@ -119,3 +119,6 @@ bun "$toolbox/src/crossroads/survey.ts" bench <run-dir> <id> cases.jsonl
 - "Reads prompt text" in code is guessed from identifier names, not traced.
 - Transcript picks use today's routing catalog, not the one live at each pick.
 - Code extraction covers Python and TypeScript only.
+- The `crossroads` verdict ranks blind-labelled units only moderately: AUC about 0.74 on prompt text and 0.62 on code, from 37 units. Read it as an ordering for review, not as a cut-off.
+- Prompt units show the classifier their heading and their own text. Do not widen that to the whole section: units next to a decision then score as decisions, and held-out AUC drops.
+- Measure an extraction or wording change on units labelled blind, before their verdicts are seen. Relabelling units the verdict disagrees with fits the labels to the classifier and inflates AUC.
