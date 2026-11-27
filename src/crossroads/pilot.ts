@@ -35,20 +35,30 @@ export async function runPilot(record: CandidateRecord, samples: Sample[], backe
 	const chosen = stratify(usable);
 	if (chosen.some((sample) => !sample.human && !sample.logged)) throw new Error("every sample needs a logged pick or a human label");
 	let agreed = 0;
+	let answeredRight = 0;
 	let fallbacks = 0;
+	let unscoredFallbacks = 0;
 	const disagreements: PilotOutcome["disagreements"] = [];
 	for (const sample of chosen) {
 		const model = await modelLabel(record, sample, backend);
 		const answer = model.fallback ? fallbackAnswer(record, sample) : model.label;
+		const reference = sample.human ?? sample.logged;
 		if (model.fallback) fallbacks++;
+		if (model.fallback && answer === undefined) unscoredFallbacks++;
+		if (!model.fallback && model.label === reference) answeredRight++;
 		if (!model.fallback && model.label !== sample.logged && !sample.human) disagreements.push({ ...sample, model: model.label });
-		if (answer !== undefined && answer === (sample.human ?? sample.logged)) agreed++;
+		if (answer !== undefined && answer === reference) agreed++;
 	}
 	if (disagreements.length) return { result: `pending: ${disagreements.length} disagreements need a human label`, disagreements };
-	const agreement = agreed / chosen.length;
+	// A fallback with no known answer cannot be scored; counting it as a miss or dropping it would both misstate agreement.
+	const agreement = unscoredFallbacks ? null : agreed / chosen.length;
+	const maxAgreement = (agreed + unscoredFallbacks) / chosen.length;
+	const answered = chosen.length - fallbacks;
+	const answeredAgreement = answered ? answeredRight / answered : null;
 	const fallbackRate = fallbacks / chosen.length;
-	const passed = agreement >= PILOT_AGREEMENT && fallbackRate <= MAX_FALLBACK_RATE;
-	return { result: { samples: chosen.length, emptyInputs, outsideLabels, agreement, fallbackRate, passed }, disagreements };
+	const passed = agreement !== null && agreement >= PILOT_AGREEMENT && fallbackRate <= MAX_FALLBACK_RATE;
+	const result = { samples: chosen.length, emptyInputs, outsideLabels, agreement, maxAgreement, answeredAgreement, unscoredFallbacks, fallbackRate, passed };
+	return { result, disagreements };
 }
 
 async function modelLabel(record: CandidateRecord, sample: Sample, backend: DecisionBackend): Promise<{ label: string | null; fallback: boolean }> {

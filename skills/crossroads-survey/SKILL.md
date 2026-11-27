@@ -93,7 +93,7 @@ bun "$toolbox/src/crossroads/survey.ts" pilot <run-dir> <id> samples.jsonl
 
 - It takes 30 samples, at least 3 per label where the data allows.
 - Disagreements land in `pilot-<id>-disagreements.jsonl`. Ask the user to add a `human` label to each, merge them into `samples.jsonl`, and rerun.
-- Pass: agreement ≥ 90% and fallback rate ≤ 20%.
+- Pass: agreement ≥ 90% and fallback rate ≤ 20%. A fallback on a sample with no `logged` pick or `fallbackAnswer` leaves `agreement` null (unmeasured) and the pilot cannot pass; `maxAgreement` is the bound if every such fallback were right, `answeredAgreement` covers only the cases the model answered.
 
 # Benchmark
 

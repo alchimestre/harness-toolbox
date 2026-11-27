@@ -146,6 +146,13 @@ check(carried?.fallback.accepted && gateStatus(carried) === "pass", "accepted fa
 	const outcome = await runPilot(fresh[0], [{ input: "x", logged: "a" }, { input: "y", logged: "uninstalled" }, { input: " ", logged: "a" }], pilotBackend);
 	check(typeof outcome.result === "object" && outcome.result.outsideLabels === 1, "pilot drops samples whose logged pick is outside the labels");
 	check(typeof outcome.result === "object" && outcome.result.emptyInputs === 1 && outcome.result.samples === 1, "pilot drops samples with an empty input");
+	const mostlySure: DecisionBackend = { ...backend, ask: async (state) => ({ answers: { decision: { label: "a", confidence: state.input === "unsure" ? 0.1 : 0.9 } }, ms: 1, inputTokens: 1 }) };
+	const sureSamples = ["p", "q", "r", "s"].map((input) => ({ input, human: "a" }));
+	const unscored = await runPilot(fresh[0], [...sureSamples, { input: "unsure", human: "a" }], mostlySure);
+	const scored = await runPilot(fresh[0], [...sureSamples, { input: "unsure", human: "a", fallbackAnswer: "a" }], mostlySure);
+	const [blind, known] = [unscored, scored].map((outcome) => (typeof outcome.result === "object" ? outcome.result : {}));
+	check(blind.agreement === null && blind.unscoredFallbacks === 1 && blind.maxAgreement === 1 && blind.passed === false, "a fallback with no logged or fallback answer leaves agreement unmeasured and blocks a pass");
+	check(known.agreement === 1 && known.passed === true, "the same pilot passes once the fallback answer is known");
 }
 
 // --- benchmark pass bars ------------------------------------------------------
