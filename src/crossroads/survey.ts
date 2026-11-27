@@ -44,7 +44,7 @@ async function survey(args: string[]): Promise<void> {
 	const target = resolve(args[0] ?? ".");
 	const picksPath = flag(args, "--picks");
 	const picks = picksPath ? readJsonl<Pick>(picksPath) : [];
-	const units = attachPicks([...promptUnits(target, installedAgentDirs(target)), ...codeUnits(target)], picks);
+	const units = attachPicks([...promptUnits(target, installedAgentDirs(target), installedSkills(target)), ...codeUnits(target)], picks);
 	const backend = jevBackend();
 	const classified = await classify(backend, units, CONCURRENCY);
 	const failures = classified.filter((item) => item.error);
@@ -136,4 +136,20 @@ function installedAgentDirs(target: string): string[] {
 	const plugins = globSync("plugins/cache/plugins/*/agents", { cwd: ompHome }).map((dir) => join(ompHome, dir)).sort();
 	const dirs = [bundled, ...plugins, join(ompHome, "agent", "agents"), join(target, ".omp", "agents")];
 	return dirs.filter((dir) => existsSync(dir));
+}
+
+// Skills the model routes among: omp's visible skills as seen from the target; hidden ones never reach the prompt.
+function installedSkills(target: string): Record<string, string> {
+	const list = spawnSync("omp", ["skill", "list", "--json"], { cwd: target, encoding: "utf8" });
+	if (list.status !== 0) {
+		console.error(`installed skills skipped: omp skill list failed (${list.error?.message ?? list.stderr.trim()})`);
+		return {};
+	}
+	try {
+		const { skills } = JSON.parse(list.stdout) as { skills: Array<{ name: string; description: string; hide?: boolean }> };
+		return Object.fromEntries(skills.filter((skill) => !skill.hide).map((skill) => [skill.name, skill.description]));
+	} catch (error) {
+		console.error(`installed skills skipped: omp skill list output unreadable (${(error as Error).message})`);
+		return {};
+	}
 }

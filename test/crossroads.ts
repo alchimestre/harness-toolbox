@@ -1,7 +1,7 @@
 // Checks crossroads-survey logic without network calls. Run: bun test/crossroads.ts
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DecisionBackend, Question } from "../src/crossroads/backend.ts";
@@ -71,6 +71,17 @@ check(units.some((unit) => unit.class === "llm closed choice" && unit.location.s
 	check(catalog?.options?.a === "Review code.", "the target's own agent overrides an installed one");
 	check(catalog?.excerpt === routing?.excerpt, "catalog record id is unchanged by installed agents");
 }
+{
+	writeFileSync(join(root, "agents", "folded.md"), "---\ndescription: >\n  Folded across\n  two lines.\nmodel: x\n---\n");
+	mkdirSync(join(root, "skills", "own"), { recursive: true });
+	writeFileSync(join(root, "skills", "own", "SKILL.md"), "---\ndescription: Own skill.\n---\n");
+	const [agents, skills] = routingUnits(root, [], { hosted: "Installed skill.", own: "Installed copy." });
+	check(agents.options?.folded === "Folded across two lines.", "a YAML block-scalar description is read whole");
+	check(skills.options?.hosted === "Installed skill.", "installed skills join the routing catalog");
+	check(skills.options?.own === "Own skill.", "the target's own skill overrides an installed one");
+	rmSync(join(root, "skills"), { recursive: true });
+	rmSync(join(root, "agents", "folded.md"));
+}
 
 const backend: DecisionBackend = { name: "fake", limits: { maxStateTokens: 32_000, maxOptions: 255, maxLevels: 10 }, usdPerInputToken: 0, ask: async () => ({ answers: {}, ms: 0, inputTokens: 0 }) };
 const allPass = { crossroads: { pYes: 0.9 }, closed_set: { pYes: 0.9 }, independent: { pYes: 0.9 }, rule_decidable: { pYes: 0.1 }, irreplaceable: { pYes: 0.1 }, kind: { label: "yes_no" } };
@@ -105,8 +116,9 @@ check(carried?.fallback.accepted && gateStatus(carried) === "pass", "accepted fa
 	carryForward(fresh, [{ ...catalogRecord({ a: "" }), fallback: { proposal: "x", accepted: true } }]);
 	check(fresh[0].question.labels?.scout !== undefined && fresh[0].fallback.accepted, "fresh catalog labels survive carry-forward; human fields still carry");
 	const pilotBackend: DecisionBackend = { ...backend, ask: async () => ({ answers: { decision: { label: "a", confidence: 0.9 } }, ms: 1, inputTokens: 1 }) };
-	const outcome = await runPilot(fresh[0], [{ input: "x", logged: "a" }, { input: "y", logged: "uninstalled" }], pilotBackend);
+	const outcome = await runPilot(fresh[0], [{ input: "x", logged: "a" }, { input: "y", logged: "uninstalled" }, { input: " ", logged: "a" }], pilotBackend);
 	check(typeof outcome.result === "object" && outcome.result.outsideLabels === 1, "pilot drops samples whose logged pick is outside the labels");
+	check(typeof outcome.result === "object" && outcome.result.emptyInputs === 1 && outcome.result.samples === 1, "pilot drops samples with an empty input");
 }
 
 // --- benchmark pass bars ------------------------------------------------------

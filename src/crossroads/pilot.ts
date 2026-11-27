@@ -28,8 +28,10 @@ export function stratify(samples: Sample[], size = PILOT_SAMPLES): Sample[] {
 export async function runPilot(record: CandidateRecord, samples: Sample[], backend: DecisionBackend): Promise<PilotOutcome> {
 	if (!pilotReady(record)) throw new Error(`${record.id} is not pilot-ready: complete question.instructions, labels, input, reference and accept the fallback`);
 	const labels = record.question.kind === "yes_no" ? new Set(["yes", "no"]) : new Set(Object.keys(record.question.labels ?? {}));
-	const usable = samples.filter((sample) => labels.has(sample.human ?? sample.logged ?? ""));
-	const outsideLabels = samples.length - usable.length;
+	const withInput = samples.filter((sample) => sample.input.trim() !== "");
+	const usable = withInput.filter((sample) => labels.has(sample.human ?? sample.logged ?? ""));
+	const emptyInputs = samples.length - withInput.length;
+	const outsideLabels = withInput.length - usable.length;
 	const chosen = stratify(usable);
 	if (chosen.some((sample) => !sample.human && !sample.logged)) throw new Error("every sample needs a logged pick or a human label");
 	let agreed = 0;
@@ -46,7 +48,7 @@ export async function runPilot(record: CandidateRecord, samples: Sample[], backe
 	const agreement = agreed / chosen.length;
 	const fallbackRate = fallbacks / chosen.length;
 	const passed = agreement >= PILOT_AGREEMENT && fallbackRate <= MAX_FALLBACK_RATE;
-	return { result: { samples: chosen.length, outsideLabels, agreement, fallbackRate, passed }, disagreements };
+	return { result: { samples: chosen.length, emptyInputs, outsideLabels, agreement, fallbackRate, passed }, disagreements };
 }
 
 async function modelLabel(record: CandidateRecord, sample: Sample, backend: DecisionBackend): Promise<{ label: string | null; fallback: boolean }> {

@@ -21,19 +21,31 @@ A crossroads is a pick from a closed, known set of options, made by judging the 
 1. Export transcript picks, unless session history is off. Run this in a Python `eval` cell, with `project` narrowed to the target's project when the survey covers one repo:
 
 ```python
-import json, os
+import json, os, re
 out = "<target>/.scratch/crossroads/picks.jsonl"
 os.makedirs(os.path.dirname(out), exist_ok=True)
 spawns = await archive.calls(tool="task", project="*", since="60d", limit=2000, silent=True)
 skills = await archive.calls(tool="read", match=r"^skill://", project="*", since="60d", limit=2000, silent=True)
+user_turns = {}
+async def request_before(call):
+    # The read's `i` note names the skill it is reading; the routed input is the user turn before the call.
+    if call["file"] not in user_turns:
+        user_turns[call["file"]] = await archive.messages(call["file"], kinds=["user"], limit=10000, silent=True)
+    earlier = [m for m in user_turns[call["file"]] if m["at"] < call["at"]]
+    return earlier[-1] if earlier else None
+seen = set()
 with open(out, "w") as f:
     for c in spawns:
         for t in c["args"].get("tasks") or []:
             if t.get("agent"):
                 f.write(json.dumps({"kind": "agent", "choice": t["agent"], "input": (t.get("task") or "")[:4000], "session": c["session"], "callId": c["callId"]}) + "\n")
-    for c in skills:
-        name = c["args"]["path"].removeprefix("skill://").split("/")[0]
-        f.write(json.dumps({"kind": "skill", "choice": name, "input": c["args"].get("i") or "", "session": c["session"], "callId": c["callId"]}) + "\n")
+    for c in reversed(skills):
+        name = re.split(r"[/:]", c["args"]["path"].removeprefix("skill://"))[0]
+        turn = await request_before(c)
+        if not name or not turn or (c["file"], turn["entry"], name) in seen:
+            continue
+        seen.add((c["file"], turn["entry"], name))
+        f.write(json.dumps({"kind": "skill", "choice": name, "input": turn["text"][:4000], "session": c["session"], "callId": c["callId"]}) + "\n")
 ```
 
 2. Run the survey:

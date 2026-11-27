@@ -40,7 +40,7 @@ export function promptFiles(root: string): string[] {
 	return [...new Set(patterns.flatMap((pattern) => listFiles(root, pattern)))].sort();
 }
 
-export function promptUnits(root: string, installedAgentDirs: string[] = []): Unit[] {
+export function promptUnits(root: string, installedAgentDirs: string[] = [], installedSkills: Record<string, string> = {}): Unit[] {
 	const units: Unit[] = [];
 	for (const path of promptFiles(root)) {
 		for (const block of markdownBlocks(readFileSync(join(root, path), "utf8"))) {
@@ -55,7 +55,7 @@ export function promptUnits(root: string, installedAgentDirs: string[] = []): Un
 			});
 		}
 	}
-	return [...units, ...routingUnits(root, installedAgentDirs)];
+	return [...units, ...routingUnits(root, installedAgentDirs, installedSkills)];
 }
 
 type Block = { heading: string; text: string; line: number; list: boolean };
@@ -106,19 +106,23 @@ function frontmatterEnd(lines: string[]): number {
 }
 
 export function description(markdown: string): string | undefined {
-	const match = markdown.match(/^description:\s*(.+)$/m);
-	return match?.[1].trim().replace(/^["']|["']$/g, "");
+	const match = markdown.match(/^description:[ \t]*(.*)$((?:\n[ \t]+\S.*)*)/m);
+	if (!match) return undefined;
+	const blockIndicator = /^[>|][-+]?\s*$/;
+	const text = (match[1].replace(blockIndicator, "") + match[2]).replace(/\s+/g, " ").trim();
+	return text.replace(/^["']|["']$/g, "") || undefined;
 }
 
-// installedAgentDirs: agent definition dirs outside the target, lowest precedence first; the target's own agents win.
-export function routingUnits(root: string, installedAgentDirs: string[] = []): Unit[] {
-	const catalogs: Array<[string, string, (path: string) => string]> = [
-		["agent", "**/agents/*.md", (path) => basename(path, ".md")],
-		["skill", "**/SKILL.md", (path) => basename(dirname(path))],
+// installedAgentDirs: agent definition dirs outside the target, lowest precedence first; installedSkills: name → description.
+// The target's own agents and skills win over installed ones.
+export function routingUnits(root: string, installedAgentDirs: string[] = [], installedSkills: Record<string, string> = {}): Unit[] {
+	const catalogs: Array<[string, string, (path: string) => string, Record<string, string>]> = [
+		["agent", "**/agents/*.md", (path) => basename(path, ".md"), {}],
+		["skill", "**/SKILL.md", (path) => basename(dirname(path)), installedSkills],
 	];
 	const units: Unit[] = [];
-	for (const [kind, pattern, nameOf] of catalogs) {
-		const options: Record<string, string> = {};
+	for (const [kind, pattern, nameOf, installed] of catalogs) {
+		const options: Record<string, string> = { ...installed };
 		const sources = kind === "agent" ? [...installedAgentDirs.map((dir) => [dir, "*.md"]), [root, pattern]] : [[root, pattern]];
 		for (const [dir, glob] of sources) {
 			for (const path of listFiles(dir, glob)) {
