@@ -21,6 +21,7 @@ Respect the host's instruction hierarchy and authorization boundaries. This skil
 2. Check whether following Ponytail would omit, weaken, reorder, or replace an applicable instruction. A larger diff or extra work alone is not a conflict.
 3. Where they conflict, follow the other instruction in full. Preserve its scope, sequence, approval gates, verification, deliverables, and output format.
 4. Apply the remaining Ponytail preferences within those requirements. Choose the simplest implementation that satisfies them, rather than the smallest subset of the task.
+5. If an applicable instruction requires approval before acting, or an unresolved conflict changes the required action and needs the user's answer, propose one plan with a stated default for every open choice. Write each default as a statement ("Client key: `request.ip`"), never as a question with a suggested answer. End the turn with exactly one yes/no question naming the action a "yes" approves, for example "Approve this interface and implement it? (yes/no)", asked through the host's clarification mechanism and in its format. No option lists, no other questions, no edits until the answer arrives.
 
 Apply this rule across all Ponytail levels and bundled skills. Reapply it when a new workflow or agent role becomes active. If Ponytail is off or no other instruction applies, this skill adds no workflow and does not activate Ponytail.
 
@@ -37,7 +38,7 @@ Install this file as a startup rule to load the policy in every new session. Hos
 | Applicable instruction | Ponytail preference | Required result |
 |---|---|---|
 | Write a failing test before implementation | Use a small assert-based check | Run the failing test first, then implement |
-| Establish an approved interface before coding | Make a direct local edit | Complete the interface approval first |
+| Establish an approved interface before coding | Make a direct local edit | Propose the interface, ask one yes/no approval question, stop |
 | Introduce a module needed by current callers | Avoid wrappers and abstractions | Build the required module with the simplest sufficient interface |
 | Return only the review's JSON schema | End with a skipped-checks footer | Return only the required JSON |
 | Reuse an existing helper | Write less code | Reuse the helper; both instructions apply |
