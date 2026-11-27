@@ -20,6 +20,7 @@ export type CandidateRecord = {
 	gates: Record<string, Gate>;
 	verdict: number | null;
 	band: Band;
+	crossroads?: boolean;
 	occurrences: Occurrences | null;
 	fallback: { proposal: string; accepted: boolean };
 	overrides: Record<string, GateStatus>;
@@ -41,7 +42,7 @@ export const CLASS_ORDER: CrossroadsClass[] = ["llm closed choice", "prompt inst
 export const LLM_CLASSES: CrossroadsClass[] = ["llm closed choice", "prompt instruction"];
 
 export const CLASSIFIER: Record<string, Question> = {
-	crossroads: { kind: "yes_no", instructions: "Does this text make an agent or program pick one option from a closed set of options by judging the meaning of some text (a task, request, message or file), rather than by a fixed rule?" },
+	crossroads: { kind: "yes_no", instructions: "Is this a place where an agent or program has to decide which path to take based on what it reads (a task, request, message, file or event)?" },
 	closed_set: { kind: "yes_no", instructions: "Are all the options of this pick named or clearly implied?" },
 	independent: { kind: "yes_no", instructions: "Can each case of this pick be judged from the one case in front of it, without comparing it to other cases or earlier picks?" },
 	rule_decidable: { kind: "yes_no", instructions: "Could a regex, file check or short script make this pick reliably, with no judgment of meaning?" },
@@ -87,14 +88,15 @@ export function percentile95(values: number[]): number | undefined {
 
 // Merges identical normalised excerpts into one record and drops units below the review floor.
 // A record from the previous run stays until p drops below the floor minus DEAD_BAND; a new one enters at the floor plus DEAD_BAND.
-export function buildRecords(classified: Classified[], backend: DecisionBackend, previousIds: Set<string> = new Set()): CandidateRecord[] {
+// A record with a human crossroads verdict stays whatever its p.
+export function buildRecords(classified: Classified[], backend: DecisionBackend, previousIds: Set<string> = new Set(), labelledIds: Set<string> = new Set()): CandidateRecord[] {
 	const p95 = percentile95(classified.flatMap((c) => (c.ms === null ? [] : [c.ms])));
 	const records = new Map<string, CandidateRecord>();
 	for (const item of classified) {
 		const verdict = item.answers?.crossroads?.pYes ?? null;
 		const id = recordId(item.unit.source, item.unit.excerpt);
 		const floor = previousIds.has(id) ? REVIEW_FLOOR - DEAD_BAND : REVIEW_FLOOR + DEAD_BAND;
-		if (verdict !== null && verdict < floor) continue;
+		if (verdict !== null && verdict < floor && !labelledIds.has(id)) continue;
 		const existing = records.get(id);
 		if (existing) {
 			existing.locations.push(item.unit.location);
@@ -194,7 +196,7 @@ export function rank(records: CandidateRecord[]): CandidateRecord[] {
 	return [...records].sort(compare);
 }
 
-const CARRIED = ["question", "fallback", "overrides", "pilot", "benchmark"] as const;
+const CARRIED = ["question", "fallback", "overrides", "crossroads", "pilot", "benchmark"] as const;
 
 // Human-owned fields follow the id from the previous run. Labels derived from a routing catalog stay fresh.
 export function carryForward(records: CandidateRecord[], previous: CandidateRecord[]): void {
@@ -208,10 +210,13 @@ export function carryForward(records: CandidateRecord[], previous: CandidateReco
 	}
 }
 
-// Gates a human decided: an accepted fallback and explicit overrides.
+// Gates a human decided: an accepted fallback, explicit overrides, and the crossroads verdict.
 export function applyHumanEdits(record: CandidateRecord): void {
 	if (record.fallback.accepted) record.gates.fallback = { status: "pass", reason: "accepted by a human" };
 	for (const [name, status] of Object.entries(record.overrides)) record.gates[name] = { status, reason: "human override" };
+	if (record.crossroads === undefined) return;
+	record.band = record.crossroads ? "candidate" : "review";
+	record.gates.crossroads = record.crossroads ? { status: "pass", reason: "human: a crossroads" } : { status: "fail", reason: "human: not a crossroads" };
 }
 
 export type RunDiff = { added: string[]; gone: CandidateRecord[]; moved: string[] };

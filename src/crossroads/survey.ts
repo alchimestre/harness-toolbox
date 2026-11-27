@@ -55,7 +55,8 @@ async function survey(args: string[]): Promise<void> {
 	const previous = previousDir ? loadRecords(previousDir) : [];
 	const stateDir = existsSync(join(runDir, "candidates.jsonl")) ? runDir : previousDir;
 	const state = stateDir === previousDir ? previous : loadRecords(runDir);
-	const records = buildRecords(classified, backend, new Set(state.map((record) => record.id)));
+	const labelledIds = new Set(state.filter((record) => record.crossroads !== undefined).map((record) => record.id));
+	const records = buildRecords(classified, backend, new Set(state.map((record) => record.id)), labelledIds);
 	carryForward(records, state);
 	excludeScratch(target);
 	const firstError = failures[0] ? ` First failure: ${failures[0].error}.` : "";

@@ -98,6 +98,15 @@ const records = buildRecords(classified, backend);
 	check(buildRecords(borderline(0.32), backend).length === 0, "a new record inside the review-floor band is not added");
 	check(buildRecords(borderline(0.27), backend, new Set([knownId])).length === 1, "a previous record inside the review-floor band is kept");
 	check(buildRecords(borderline(0.24), backend, new Set([knownId])).length === 0, "a previous record below the band is dropped");
+	for (const crossroads of [true, false]) {
+		const [labelled] = buildRecords(borderline(0.5), backend);
+		labelled.crossroads = crossroads;
+		const resurveyed = buildRecords(borderline(0.1), backend, new Set([knownId]), new Set([knownId]));
+		carryForward(resurveyed, [labelled]);
+		resurveyed.forEach(applyHumanEdits);
+		const kept = resurveyed.find((record) => record.id === knownId);
+		check(kept?.crossroads === crossroads && (crossroads ? kept.band === "candidate" : gateStatus(kept) === "fail"), `a human crossroads: ${crossroads} survives a resurvey below the review floor`);
+	}
 }
 const review = records.find((record) => record.excerpt.startsWith("Decide whether"));
 check(review?.locations.length === 2, "identical excerpts in two files merge into one record");
@@ -110,6 +119,19 @@ carryForward(next, records);
 next.forEach(applyHumanEdits);
 const carried = next.find((record) => record.id === review!.id);
 check(carried?.fallback.accepted && gateStatus(carried) === "pass", "accepted fallback carries forward by id and passes the gate");
+{
+	const [promoted, refused] = next;
+	promoted.band = "review";
+	promoted.crossroads = true;
+	refused.crossroads = false;
+	const later = buildRecords(classified, backend);
+	later.forEach((record) => (record.band = "review"));
+	carryForward(later, [promoted, refused]);
+	later.forEach(applyHumanEdits);
+	const [up, down] = [promoted, refused].map((record) => later.find((each) => each.id === record.id)!);
+	check(up.band === "candidate", "a human crossroads: true promotes a record to the candidate band and carries forward");
+	check(down.gates.crossroads?.status === "fail" && gateStatus(down) === "fail", "a human crossroads: false rejects the record");
+}
 {
 	const catalogRecord = (labels: Record<string, string>) => ({ ...records.find((record) => record.heading === "agent routing")!, question: { kind: "choice" as const, instructions: "pick", labels, input: "text", reference: "logs" } });
 	const fresh = [catalogRecord({ a: "", scout: "" })];

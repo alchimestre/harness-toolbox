@@ -5,7 +5,7 @@ description: "Use when asked where a decision model (Jev or another) could repla
 
 You find crossroads and rank them. You never build the gate that replaces one.
 
-A crossroads is a pick from a closed, known set of options, made by judging the meaning of text. Each case can be judged on its own. A pick a regex or script could make reliably is not a crossroads.
+A crossroads is any place where an agent or program has to decide which path to take based on what it reads. The gates then judge whether a decision model could take that decision: a closed set of options, each case judged on its own, and not reliably decidable by a regex or script.
 
 # Inputs
 
@@ -79,8 +79,9 @@ Edit the record's line in `candidates.jsonl`, then run `bun "$toolbox/src/crossr
 | `fallback.accepted` | `true` once a human accepts the proposed fallback |
 | `question` | `instructions`, `labels` (label → one-line criterion), `input` (what the model sees), `reference` (where the right answer comes from) |
 | `overrides` | `{"<gate>": "pass"}` or `"fail"` where the classifier is wrong |
+| `crossroads` | `true`: a real crossroads, moves to the candidate sections whatever its p. `false`: not one, rejected. Also the label for piloting the crossroads question itself |
 
-Never set `fallback.accepted` or an override yourself: ask the user.
+Never set `fallback.accepted`, an override or `crossroads` yourself: ask the user.
 
 # Pilot
 
