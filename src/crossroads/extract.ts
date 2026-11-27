@@ -30,6 +30,9 @@ const LEXICON =
 	/\b(decide|choose|pick|whether|prefer|otherwise|unless)\b|\b(if|when) (the )?(user|task|request)\b|\b\w+ or \w+\b/i;
 const LIST_ITEM = /^\s*([-*+]|\d+\.)\s+|^\s*\|/;
 const CONDITION_LEAD = /^(\*\*[^*]{1,60}\*\*:?|`[^`]{1,60}`[^:.]{0,40}:|[^:.`]{1,40}:)\s|^(when|if|only when|unless)\b|^[^,.]{1,40},\s*(only )?(when|if|unless)\b/i;
+const HEADING = /^(#+)\s*(.*)/;
+const BOLD_LEAD = /^\*\*[^*]{1,60}(\*\*:|:\*\*)\s/;
+const UNIT_MARKER = "  <-- this line";
 
 export function listFiles(root: string, pattern: string): string[] {
 	return globSync(pattern, { cwd: root }).filter((path) => !IGNORED.test(`/${path}`)).sort();
@@ -51,52 +54,101 @@ export function promptUnits(root: string, installedAgentDirs: string[] = [], ins
 				location: `${path}:${block.line}`,
 				heading: block.heading,
 				excerpt: block.text,
-				context: `${block.heading}\n${block.text}`,
+				context: block.context,
 			});
 		}
 	}
 	return [...units, ...routingUnits(root, installedAgentDirs, installedSkills)];
 }
 
-type Block = { heading: string; text: string; line: number; list: boolean };
+// context: the unit's whole section under its heading path, the unit's own lines marked, so the classifier sees siblings and lead-ins.
+type Block = { heading: string; text: string; line: number; list: boolean; context: string };
+type Group = { starts: number[]; end: number; items: string[]; list: boolean };
+type Span = { text: string; line: number; last: number; list: boolean };
 
 // shortcut: lists and paragraphs only; nested list levels flatten into the parent list.
 export function markdownBlocks(markdown: string): Block[] {
 	const lines = markdown.split("\n");
-	const start = frontmatterEnd(lines);
 	const blocks: Block[] = [];
-	let heading = "";
+	const trail: string[] = [];
+	let sectionStart = frontmatterEnd(lines);
+	let groups: Group[] = [];
 	let fenced = false;
-	let group: { line: number; items: string[]; list: boolean } | undefined;
+	let group: Group | undefined;
 	const flush = () => {
-		if (group) blocks.push(...groupBlocks(heading, group));
+		if (group) groups.push(group);
 		group = undefined;
 	};
-	for (let index = start; index < lines.length; index++) {
+	const closeSection = (end: number) => {
+		flush();
+		blocks.push(...sectionBlocks(trail.filter(Boolean).join(" > "), lines.slice(sectionStart, end), sectionStart, groups));
+		groups = [];
+	};
+	for (let index = sectionStart; index < lines.length; index++) {
 		const line = lines[index];
 		if (line.startsWith("```")) fenced = !fenced;
 		if (fenced || line.startsWith("```")) continue;
-		if (line.startsWith("#") || !line.trim()) {
+		const heading = line.match(HEADING);
+		if (heading) {
+			closeSection(index);
+			trail.length = heading[1].length - 1;
+			trail[heading[1].length - 1] = heading[2].trim();
+			sectionStart = index + 1;
+			continue;
+		}
+		if (!line.trim()) {
 			flush();
-			if (line.startsWith("#")) heading = line.replace(/^#+\s*/, "").trim();
 			continue;
 		}
 		const isItem = LIST_ITEM.test(line);
 		if (group && isItem !== group.list && !(group.list && /^\s+/.test(line))) flush();
-		group ??= { line: index + 1, items: [], list: isItem };
-		if (isItem || !group.list) group.items.push(line.trim());
-		else group.items[group.items.length - 1] += ` ${line.trim()}`;
+		group ??= { starts: [], end: index + 1, items: [], list: isItem };
+		group.end = index + 1;
+		if (isItem || !group.list) {
+			group.items.push(line.trim());
+			group.starts.push(index + 1);
+		} else group.items[group.items.length - 1] += ` ${line.trim()}`;
 	}
-	flush();
+	closeSection(lines.length);
 	return blocks;
 }
 
-function groupBlocks(heading: string, group: { line: number; items: string[]; list: boolean }): Block[] {
-	if (!group.list) return [{ heading, text: group.items.join(" "), line: group.line, list: false }];
+// sectionLines start at 0-based document index `offset`; spans carry 1-based document lines.
+function sectionBlocks(heading: string, sectionLines: string[], offset: number, groups: Group[]): Block[] {
+	const spans: Span[] = [];
+	const boldLead = (group: Group) => !group.list && BOLD_LEAD.test(group.items[0]);
+	// Group end is 1-based, so sectionLines[end - offset] is the first line after it.
+	const blankGap = (before: Group, after: Group) => sectionLines.slice(before.end - offset, after.starts[0] - 1 - offset).every((row) => !row.trim());
+	for (let index = 0; index < groups.length; ) {
+		let run = index;
+		while (run < groups.length && boldLead(groups[run]) && (run === index || blankGap(groups[run - 1], groups[run]))) run++;
+		if (run - index < MIN_CONDITION_ITEMS) {
+			spans.push(...groupSpans(groups[index]));
+			index++;
+			continue;
+		}
+		const paragraphs = groups.slice(index, run);
+		spans.push({ text: paragraphs.map((paragraph) => paragraph.items.join(" ")).join("\n"), line: paragraphs[0].starts[0], last: paragraphs[paragraphs.length - 1].end, list: true });
+		index = run;
+	}
+	return spans.map(({ text, line, last, list }) => {
+		const marked = sectionLines.map((row, index) => (index + offset + 1 >= line && index + offset + 1 <= last && row.trim() ? `${row}${UNIT_MARKER}` : row));
+		return { heading, text, line, list, context: `${heading}\n${around(marked.join("\n").trim())}`.trim() };
+	});
+}
+
+// A long section is cut to a window that still holds the marked unit.
+function around(section: string): string {
+	const start = Math.max(0, Math.min(section.indexOf(UNIT_MARKER) - MAX_CONTEXT_CHARS / 2, section.length - MAX_CONTEXT_CHARS));
+	return section.slice(start, start + MAX_CONTEXT_CHARS);
+}
+
+function groupSpans(group: Group): Span[] {
+	if (!group.list) return [{ text: group.items.join(" "), line: group.starts[0], last: group.end, list: false }];
 	const items = group.items.map((item) => item.replace(LIST_ITEM, ""));
 	const conditional = items.filter((item) => CONDITION_LEAD.test(item)).length;
-	if (conditional >= MIN_CONDITION_ITEMS) return [{ heading, text: group.items.join("\n"), line: group.line, list: true }];
-	return group.items.map((item, offset) => ({ heading, text: item, line: group.line + offset, list: false }));
+	if (conditional >= MIN_CONDITION_ITEMS) return [{ text: group.items.join("\n"), line: group.starts[0], last: group.end, list: true }];
+	return group.items.map((item, offset) => ({ text: item, line: group.starts[offset], last: (group.starts[offset + 1] ?? group.end + 1) - 1, list: false }));
 }
 
 function frontmatterEnd(lines: string[]): number {

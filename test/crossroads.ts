@@ -42,6 +42,18 @@ check(recordId("prompt text", "pick a or b") !== recordId("harness code", "pick 
 	check(blocks.length === 2 && blocks[0].list, "conditional sibling bullets form one list unit");
 	check(blocks[0].text.includes("Timeline"), "list unit keeps every alternative");
 	check(blocks[1].heading === "View", "block carries nearest heading");
+	check(blocks[1].context.includes("Timeline") && blocks[1].context.includes("recompute it.  <-- this line") && !blocks[1].context.includes("cost  <--"), "context is the whole section with only the unit marked");
+	const axes = markdownBlocks(["# Rules", "## Axes", "Report each axis.", "", "**Spec**: missing requirements.", "", "**Tests**: risky path covered?"].join("\n"));
+	check(axes.length === 2 && axes[1].text.includes("Spec") && axes[1].text.includes("Tests"), "sibling bold-lead paragraphs form one unit");
+	check(axes[1].heading === "Rules > Axes", "heading is the heading path");
+	const fenced = markdownBlocks(["# Axes", "**Spec**: missing requirements.", "", "```", "example", "```", "", "**Tests**: risky path covered?", "", "**Note** read twice.", ""].join("\n"));
+	check(fenced.length === 3 && fenced.every((block) => !block.list), "a fence or a colon-less bold lead breaks the bold-lead run");
+	const filler = Array.from({ length: 400 }, (_, index) => `Filler paragraph ${index} with nothing to decide here.`).join("\n\n");
+	const long = markdownBlocks(`# Long\n${filler}\n\nDecide whether to retry or stop.`);
+	const last = long[long.length - 1].context;
+	check(last.length <= 6_000 + "Long\n".length && last.includes("retry or stop.  <-- this line"), "long section window keeps the marked unit");
+	const split = markdownBlocks("# Steps\n- Read the file.\n- Pick a or b.");
+	check(split[1].context.includes("Pick a or b.  <-- this line") && !split[1].context.includes("file.  <--"), "split list item marks only its own line");
 }
 
 // --- repo extraction, merge, carry-forward -----------------------------------
