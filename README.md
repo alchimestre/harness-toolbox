@@ -89,6 +89,7 @@ extensions:
   - /path/to/harness-toolbox/extensions/worker-skill-trim.ts
   - /path/to/harness-toolbox/extensions/subagent-scheduler.ts
   - /path/to/harness-toolbox/extensions/git-chores-fast-path.ts
+  - /path/to/harness-toolbox/extensions/reviewer-diff-guard.ts
 extensionHandlers:
   toolCallTimeoutMs: 600000
 skills:
@@ -143,6 +144,7 @@ brew install flamegraph
 | subagent-scheduler | `extensions/subagent-scheduler.ts` | Makes every subagent wait for a machine-wide slot before its first tool call. See [Subagent scheduler](#subagent-scheduler). |
 | git-chores-fast-path | `extensions/git-chores-fast-path.ts` | Does a one-path ignore, exclude, or untrack `git-chores` task itself when Jev is confident, and blocks the spawn with the result. Runs only from the repo root, with an explicit ignore or untrack ask and no commit, push, delete, or other agent-only job. Falls back to the agent on any doubt or Jev error, or without `TYPESAFE_API_KEY`. |
 | git-chores-fast-path | `extensions/git-chores-fast-path.ts` | Does a one-path ignore, exclude, or untrack `git-chores` task itself when Jev is confident, and blocks the spawn with the result. Runs only from the repo root, with an explicit ignore or untrack ask and no commit, push, delete, or other agent-only job. Falls back to the agent on any doubt, a Jev error, a failed git action, or without `TYPESAFE_API_KEY`. Each `git-chores` task call appends one JSON line to the file named by the `GIT_CHORES_FAST_PATH_LOG` env var (default `~/.omp/agent/git-chores-fast-path.jsonl`): `ts`, `outcome` (`fast` or `agent`), `reason`, `label`, `confidence`, `ms`, and `path` when the fast path acted on it. |
+| reviewer-diff-guard | `extensions/reviewer-diff-guard.ts` | Blocks a `task` call that spawns `readonly-reviewer`, `review-high`, or `review-low` with no diff in its task or context, so the parent resends it instead of paying for a `BLOCKED: no diff supplied` reply. Any mention of a diff or patch, a hunk, or a `local://` or `pr://` reference lets it through. |
 
 ## Skills
 

@@ -10,6 +10,7 @@ import searchGuard from "../extensions/search-guard.ts";
 import workerSkillTrim from "../extensions/worker-skill-trim.ts";
 import subagentScheduler from "../extensions/subagent-scheduler.ts";
 import gitChoresFastPath from "../extensions/git-chores-fast-path.ts";
+import reviewerDiffGuard from "../extensions/reviewer-diff-guard.ts";
 import type { DecisionBackend } from "../src/crossroads/backend.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
@@ -316,6 +317,24 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	rmSync(logDir, { recursive: true, force: true });
 	delete process.env.GIT_CHORES_FAST_PATH_LOG;
 	rmSync(repo, { recursive: true, force: true });
+}
+
+// --- reviewer-diff-guard ----------------------------------------------------
+{
+	const { pi, handlers } = fakePi();
+	reviewerDiffGuard(pi as never);
+	const call = (input: unknown, toolName = "task") => handlers["tool_call"]({ toolName, input }, ctx) as { block: true; reason: string } | undefined;
+	const review = (task: string, agent = "review-low", context?: string) => call({ context, tasks: [{ name: "Check", agent, task }] });
+
+	check(review("Review the change to src/app.ts for correctness.")?.block, "a reviewer with no diff is blocked before it spawns");
+	check(review("Review the change.", "review-high")?.reason.includes("Check"), "the block names the reviewer task");
+	check(review("Review this diff: src/app.ts") === undefined, "a diff mentioned in the task lets the reviewer spawn");
+	check(review("Review it.", "readonly-reviewer", "Diff at local://change.md") === undefined, "a diff in the shared context lets the reviewer spawn");
+	check(review("@@ -1,2 +1,3 @@\n-a\n+b") === undefined, "an inline hunk lets the reviewer spawn");
+	check(review("Review pr://12.") === undefined, "a PR reference lets the reviewer spawn");
+	check(review("Fix the bug in src/app.ts.", "task") === undefined, "other agents are untouched");
+	check(call({ tasks: [{ agent: "task", task: "x" }, { name: "R", agent: "review-low", task: "Review it." }] })?.block, "a call with one diffless reviewer among other tasks is blocked");
+	check(call({ command: "ls" }, "bash") === undefined, "other tools are untouched");
 }
 
 console.log("\nall wiring checks passed");
