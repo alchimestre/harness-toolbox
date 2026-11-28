@@ -3,11 +3,12 @@
 // Anything else, or any Jev doubt or error, spawns the agent unchanged.
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import type { DecisionBackend, Question } from "../src/crossroads/backend.ts";
-import { decidedLabel, isFallback, jevBackend } from "../src/crossroads/backend.ts";
+import { decidedLabel, effectiveConfidence, isFallback, jevBackend } from "../src/crossroads/backend.ts";
 
 const AGENT = "git-chores";
 const JEV_TIMEOUT_MS = 2_000;
@@ -19,6 +20,7 @@ const BACKTICKED = /`([^`]+)`/g;
 // "Do not commit or push" is the usual guard line in an ignore chore, not a commit job.
 const NEGATED_CLAUSE = /\b(do not|don't|not|never|without|no)\b[^.\n]*/gi;
 const IGNORE_FILES: Record<string, true> = { ".gitignore": true, ".git/info/exclude": true };
+const DEFAULT_LOG_FILE = join(homedir(), ".omp", "agent", "git-chores-fast-path.jsonl");
 
 export const QUESTION: Question = {
 	kind: "choice",
@@ -33,47 +35,66 @@ export const QUESTION: Question = {
 type TaskInput = { context?: string; tasks?: { agent?: string; task?: string }[] };
 type ToolCallEvent = { toolName: string; input: TaskInput };
 export type Chore = { path: string; tracked: boolean; request: string };
+type Eligibility = { chore: Chore } | { reason: string };
+type Verdict = { reason?: string; label?: string; confidence?: number };
+type Decision = Verdict & { reason: string; path?: string; block?: string };
+type LogEntry = { ts: string; outcome: "fast" | "agent"; reason: string; label?: string; confidence?: number; path?: string; ms: number };
 
 export default function gitChoresFastPath(pi: ExtensionAPI, backend?: DecisionBackend): void {
 	pi.on("tool_call", async (event: ToolCallEvent, ctx: { cwd: string }) => {
-		if (event.toolName !== "task") return;
-		const chore = eligibleChore(event.input, ctx.cwd);
-		if (!chore) return;
-		const label = await askLabel(backend, chore);
-		if (!label || (label === "untrack") !== chore.tracked) return;
-		const reason = tryApplyChore(ctx.cwd, chore.path, label);
-		return reason ? { block: true, reason } : undefined;
+		const targetsChores = (event.input.tasks ?? []).some((task) => task.agent === AGENT);
+		if (event.toolName !== "task" || !targetsChores) return;
+		const started = Date.now();
+		const { block, ...decision } = await decide(event.input, ctx.cwd, backend);
+		appendLog({ ts: new Date().toISOString(), outcome: block ? "fast" : "agent", ...decision, ms: Date.now() - started });
+		return block ? { block: true, reason: block } : undefined;
 	});
 	pi.setLabel("git-chores fast path");
 }
 
-export function eligibleChore(input: TaskInput, cwd: string): Chore | undefined {
+async function decide(input: TaskInput, cwd: string, backend: DecisionBackend | undefined): Promise<Decision> {
+	const eligibility = eligibleChore(input, cwd);
+	if ("reason" in eligibility) return { reason: eligibility.reason };
+	const { chore } = eligibility;
+	const verdict = await askLabel(backend, chore);
+	const { label, confidence } = verdict;
+	if (verdict.reason || label === undefined) return { reason: verdict.reason ?? "jev-unsure", label, confidence };
+	if ((label === "untrack") !== chore.tracked) return { reason: "label-contradicts-tracked", label, confidence };
+	const block = tryApplyChore(cwd, chore.path, label);
+	return block ? { label, confidence, path: chore.path, reason: "done", block } : { label, confidence, reason: "action-failed" };
+}
+
+export function eligibleChore(input: TaskInput, cwd: string): Eligibility {
 	const tasks = input.tasks ?? [];
-	if (tasks.length !== 1 || tasks[0].agent !== AGENT) return undefined;
+	if (tasks.length !== 1) return { reason: "not-eligible:task-count" };
 	const request = tasks[0].task ?? "";
 	const paths = new Set([...request.matchAll(BACKTICKED)].map((match) => match[1]).filter(isPathToken));
 	const asked = `${input.context ?? ""}\n${request}`.replace(NEGATED_CLAUSE, "");
-	if (AGENT_ONLY.test(asked) || !IGNORE_INTENT.test(asked) || paths.size !== 1) return undefined;
+	if (AGENT_ONLY.test(asked)) return { reason: "not-eligible:agent-only-job" };
+	if (!IGNORE_INTENT.test(asked)) return { reason: "not-eligible:no-ignore-intent" };
+	if (paths.size !== 1) return { reason: "not-eligible:path-count" };
 	const [path] = paths;
 	// shortcut: only runs from the repo root, so ignore patterns need no prefix; subdirectories go to the agent.
 	const root = git(cwd, "rev-parse", "--show-toplevel");
-	if (root.status !== 0 || realpathSync(root.stdout.trim()) !== realpathSync(cwd)) return undefined;
+	if (root.status !== 0 || realpathSync(root.stdout.trim()) !== realpathSync(cwd)) return { reason: "not-eligible:not-repo-root" };
 	const tracked = git(cwd, "ls-files", "--error-unmatch", "--", path).status === 0;
-	return { path, tracked, request };
+	return { chore: { path, tracked, request } };
 }
 
 function isPathToken(token: string): boolean {
 	return !IGNORE_FILES[token] && !/\s/.test(token) && !token.startsWith("-") && !token.startsWith("/") && !token.split("/").includes("..");
 }
 
-async function askLabel(backend: DecisionBackend | undefined, chore: Chore): Promise<string | undefined> {
+async function askLabel(backend: DecisionBackend | undefined, chore: Chore): Promise<Verdict> {
 	const state = `Path \`${chore.path}\` is ${chore.tracked ? "tracked" : "untracked"}. Request: ${chore.request}`;
 	try {
 		const asked = await (backend ?? jevBackend()).ask({ input: state }, { decision: QUESTION }, JEV_TIMEOUT_MS);
 		const answer = asked.answers.decision;
-		return isFallback(QUESTION, answer) ? undefined : decidedLabel(QUESTION, answer);
+		const label = decidedLabel(QUESTION, answer);
+		const confidence = effectiveConfidence(QUESTION.kind, answer);
+		return isFallback(QUESTION, answer) ? { reason: "jev-unsure", label, confidence } : { label, confidence };
 	} catch {
-		return undefined;
+		return { reason: "jev-error" };
 	}
 }
 
@@ -106,6 +127,16 @@ function appendLine(file: string, line: string): boolean {
 	const separator = current === "" || current.endsWith("\n") ? "" : "\n";
 	appendFileSync(file, `${separator}${line}\n`);
 	return true;
+}
+
+function appendLog(entry: LogEntry): void {
+	try {
+		const file = process.env.GIT_CHORES_FAST_PATH_LOG || DEFAULT_LOG_FILE;
+		mkdirSync(dirname(file), { recursive: true });
+		appendFileSync(file, `${JSON.stringify(entry)}\n`);
+	} catch {
+		// Logging must never block a task call.
+	}
 }
 
 function git(cwd: string, ...args: string[]) {

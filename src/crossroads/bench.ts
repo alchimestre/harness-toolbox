@@ -8,8 +8,9 @@ import { DEFAULT_BUDGET_MS, LLM_CLASSES, percentile95 } from "./records.ts";
 import { MAX_FALLBACK_RATE } from "./pilot.ts";
 
 export type BenchCase = { id: string; split: "pilot" | "holdout"; input: string; reference: string; referenceSource: string; fallbackAnswer?: string };
-type BenchContract = { id: string; class: CandidateRecord["class"]; question: Contract; fallback: string; budgetMs: number; currentDecider: { command: string }; fallbackDecider?: { command: string } };
+type BenchContract = { id: string; class: CandidateRecord["class"]; question: Contract; fallback: string; budgetMs: number; latency?: "relative"; currentDecider: { command: string }; fallbackDecider?: { command: string }; action?: { command: string } };
 export type RunResult = { case: string; decider: "model" | "current"; rep: number; label: string | null; fallback: boolean; ms: number; usd: number };
+type ModelAnswer = Omit<RunResult, "case" | "decider" | "rep">;
 
 export const PILOT_CASES = 30;
 export const HOLDOUT_CASES = 70;
@@ -55,15 +56,15 @@ export async function runCase(benchDir: string, decider: string, caseId: string,
 	const { contract, cases } = loadBench(benchDir);
 	const item = cases.find((candidate) => candidate.id === caseId);
 	if (!item) throw new Error(`no case ${caseId}`);
-	if (decider === "current") return { case: caseId, decider: "current", rep, ...runCommand(contract.currentDecider.command, item), fallback: false };
+	if (decider === "current") return { case: caseId, decider: "current", rep, ...runCommand(contract.currentDecider.command, decisionInput(item)), fallback: false };
 	if (decider !== "model") throw new Error(`decider must be model or current, got ${decider}`);
 	const model = await askModel(contract, item, backend);
-	if (!model.fallback) return { case: caseId, decider: "model", rep, ...model };
-	const fallback = runCommand(contract.fallbackDecider?.command || contract.currentDecider.command, item);
+	if (!model.fallback) return { case: caseId, decider: "model", rep, ...withAction(contract, item, model) };
+	const fallback = runCommand(contract.fallbackDecider?.command || contract.currentDecider.command, decisionInput(item));
 	return { case: caseId, decider: "model", rep, label: fallback.label, fallback: true, ms: model.ms + fallback.ms, usd: model.usd + fallback.usd };
 }
 
-async function askModel(contract: BenchContract, item: BenchCase, backend: DecisionBackend): Promise<Omit<RunResult, "case" | "decider" | "rep">> {
+async function askModel(contract: BenchContract, item: BenchCase, backend: DecisionBackend): Promise<ModelAnswer> {
 	const started = performance.now();
 	try {
 		const asked = await backend.ask({ input: item.input }, { decision: contract.question }, RUN_TIMEOUT_MS);
@@ -76,12 +77,22 @@ async function askModel(contract: BenchContract, item: BenchCase, backend: Decis
 	}
 }
 
-function runCommand(command: string, item: BenchCase): { label: string | null; ms: number; usd: number } {
-	if (!command) throw new Error("set currentDecider.command in contract.json: it reads {\"id\", \"input\"} on stdin and prints {\"label\", \"usd\"}");
+function decisionInput(item: BenchCase): { id: string; input: string } {
+	return { id: item.id, input: item.input };
+}
+
+// Scores the state the action left, not Jev's label: an action that fails to apply it is an error.
+function withAction(contract: BenchContract, item: BenchCase, model: ModelAnswer): ModelAnswer {
+	if (!contract.action) return model;
+	const acted = runCommand(contract.action.command, { ...decisionInput(item), label: model.label });
+	return { label: acted.label, fallback: false, ms: model.ms + acted.ms, usd: model.usd + acted.usd };
+}
+
+function runCommand(command: string, stdin: object): { label: string | null; ms: number; usd: number } {
+	if (!command) throw new Error("empty decider command in contract.json");
 	const started = performance.now();
 	// Only decision inputs: reference or fallbackAnswer on stdin would let the decider, and the model's fallback, read the answer.
-	const decisionInput = JSON.stringify({ id: item.id, input: item.input });
-	const run = spawnSync("sh", ["-c", command], { input: decisionInput, encoding: "utf8" });
+	const run = spawnSync("sh", ["-c", command], { input: JSON.stringify(stdin), encoding: "utf8" });
 	const ms = performance.now() - started;
 	if (run.status !== 0) throw new Error(`decider command failed: ${run.stderr}`);
 	const output = JSON.parse(run.stdout) as { label?: string; usd?: number };
@@ -90,7 +101,7 @@ function runCommand(command: string, item: BenchCase): { label: string | null; m
 
 export type SplitScore = { accuracy: number; fallbackRate: number; p95Ms: number; usdPerDecision: number; runs: number };
 
-export function scoreBench(contract: Pick<BenchContract, "class" | "budgetMs">, cases: BenchCase[], results: RunResult[]) {
+export function scoreBench(contract: Pick<BenchContract, "class" | "budgetMs" | "latency">, cases: BenchCase[], results: RunResult[]) {
 	requireFullMatrix(cases, results);
 	const splitOf = new Map(cases.map((item) => [item.id, item]));
 	const score = (decider: RunResult["decider"], split: BenchCase["split"]): SplitScore => {
@@ -102,7 +113,8 @@ export function scoreBench(contract: Pick<BenchContract, "class" | "budgetMs">, 
 	};
 	const table = { model: { pilot: score("model", "pilot"), holdout: score("model", "holdout") }, current: { pilot: score("current", "pilot"), holdout: score("current", "holdout") } };
 	const holdoutReferenceSources = [...new Set(cases.filter((item) => item.split === "holdout").map((item) => item.referenceSource))];
-	return { table, holdoutReferenceSources, checks: passChecks(contract, table.model.holdout, table.current.holdout) };
+	const latency = latencyLimit(contract, table.current.holdout);
+	return { table, holdoutReferenceSources, latencyBar: latency.label, checks: passChecks(contract, table.model.holdout, table.current.holdout, latency.limitMs) };
 }
 
 // Every case × decider × rep exactly once: a missing, duplicate or unknown cell makes the score meaningless.
@@ -119,11 +131,17 @@ export function requireFullMatrix(cases: BenchCase[], results: RunResult[]): voi
 	if (missing) throw new Error(`incomplete matrix: ${missing} of ${expected.size} cells missing`);
 }
 
-function passChecks(contract: Pick<BenchContract, "class" | "budgetMs">, model: SplitScore, current: SplitScore): Record<string, boolean> {
+function latencyLimit(contract: Pick<BenchContract, "budgetMs" | "latency">, current: SplitScore): { limitMs: number; label: string } {
+	if (contract.latency === undefined) return { limitMs: contract.budgetMs, label: `model p95 ≤ ${contract.budgetMs} ms` };
+	if (contract.latency !== "relative") throw new Error(`latency must be "relative" or absent, got ${String(contract.latency)}`);
+	return { limitMs: current.p95Ms, label: `model p95 ≤ current decider p95 (${Math.round(current.p95Ms)} ms, same run)` };
+}
+
+function passChecks(contract: Pick<BenchContract, "class">, model: SplitScore, current: SplitScore, latencyLimitMs: number): Record<string, boolean> {
 	const llmDecider = LLM_CLASSES.includes(contract.class);
 	const checks: Record<string, boolean> = {
 		accuracy: llmDecider ? model.accuracy >= current.accuracy - MAX_ACCURACY_DROP : model.accuracy >= current.accuracy + MIN_ACCURACY_GAIN,
-		latency: model.p95Ms <= contract.budgetMs,
+		latency: model.p95Ms <= latencyLimitMs,
 		fallbackRate: model.fallbackRate <= MAX_FALLBACK_RATE,
 	};
 	if (llmDecider) checks.cost = model.usdPerDecision * MIN_COST_RATIO <= current.usdPerDecision;

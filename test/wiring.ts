@@ -229,6 +229,11 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 
 // --- git-chores-fast-path ---------------------------------------------------
 {
+	const logDir = mkdtempSync(join(tmpdir(), "fast-path-log-"));
+	const logFile = join(logDir, "git-chores-fast-path.jsonl");
+	process.env.GIT_CHORES_FAST_PATH_LOG = logFile;
+	const logLines = (): Array<Record<string, unknown>> => (existsSync(logFile) ? readFileSync(logFile, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : []);
+	const lastEntry = () => logLines().at(-1);
 	const repo = mkdtempSync(join(tmpdir(), "fast-path-"));
 	const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo }).stdout.toString();
 	git("init", "-q");
@@ -261,6 +266,8 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	const ignored = await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `build.log` for everyone.");
 	check(ignored?.block && readFileSync(join(repo, ".gitignore"), "utf8").includes("build.log\n"), "confident gitignore appends the path and blocks the spawn");
 	check(ignored?.reason.includes("Do not retry"), "the block reason tells the parent the chore is done");
+	const first = lastEntry();
+	check(logLines().length === 1 && first?.outcome === "fast" && first?.reason === "done" && first?.label === "gitignore" && first?.path === "build.log" && typeof first?.ms === "number", "a done chore logs one fast line with its label and path");
 	await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `build.log` for everyone.");
 	check(readFileSync(join(repo, ".gitignore"), "utf8").split("build.log").length === 2, "a repeated gitignore does not duplicate the line");
 	const excluded = await callTask(fakeJev("exclude", CONFIDENT), "Exclude `notes.md`, only on my machine.");
@@ -274,25 +281,40 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	const realCall = (await realHandlers["tool_call"]({ toolName: "task", input: { context: realContext, tasks: [{ agent: "git-chores", task: realAssignment }] } }, { cwd: repo })) as { block?: boolean } | undefined;
 	check(realCall?.block, "a real parent assignment with ignore-file names and do-not-commit guards takes the fast path");
 	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `../outside.log`.")) === undefined, "a path outside the repo spawns the agent");
+	check(lastEntry()?.reason === "not-eligible:path-count", "a path outside the repo logs not-eligible:path-count");
 	const READ_ONLY = 0o444;
 	const WRITABLE = 0o644;
 	chmodSync(join(repo, ".gitignore"), READ_ONLY);
 	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `locked.log` for everyone.")) === undefined, "a failed write spawns the agent instead of failing the hook");
+	check(lastEntry()?.reason === "action-failed" && lastEntry()?.outcome === "agent" && !("path" in (lastEntry() ?? {})), "a failed write logs action-failed without the path and spawns the agent");
 	chmodSync(join(repo, ".gitignore"), WRITABLE);
 
 	const before = readFileSync(join(repo, ".gitignore"), "utf8");
 	asked = 0;
 	check((await callTask(fakeJev("gitignore", UNSURE), "Ignore `other.log`.")) === undefined, "an unsure Jev answer spawns the agent");
+	check(lastEntry()?.reason === "jev-unsure" && lastEntry()?.confidence === UNSURE, "an unsure Jev answer logs jev-unsure with its confidence");
 	check((await callTask(fakeJev("untrack", CONFIDENT), "Untrack `other.log`.")) === undefined, "untrack on an untracked path spawns the agent");
+	check(lastEntry()?.reason === "label-contradicts-tracked", "an untrack label on an untracked path logs label-contradicts-tracked");
 	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `a.log` and `b.log`.")) === undefined, "two paths spawn the agent");
+	check(lastEntry()?.reason === "not-eligible:path-count", "two paths log not-eligible:path-count");
 	check(asked === 2, "Jev is asked only for one-path chores");
 	asked = 0;
 	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `x.log`, then commit and push.")) === undefined, "a commit or push spawns the agent");
+	check(lastEntry()?.reason === "not-eligible:agent-only-job", "a commit or push logs not-eligible:agent-only-job");
 	check((await callTask(fakeJev("gitignore", CONFIDENT), "What is the status of `x.log`?")) === undefined, "a request without ignore or untrack intent spawns the agent");
+	check(lastEntry()?.reason === "not-eligible:no-ignore-intent", "a request without ignore intent logs not-eligible:no-ignore-intent");
+	const linesBeforeOtherAgent = logLines().length;
 	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `x.log`.", "task")) === undefined, "other agents are untouched");
+	check(logLines().length === linesBeforeOtherAgent, "a non-git-chores task writes no log line");
 	check(asked === 0 && readFileSync(join(repo, ".gitignore"), "utf8") === before, "ineligible calls never reach Jev or touch the repo");
 	const failing: DecisionBackend = { ...fakeJev("gitignore", CONFIDENT), ask: async () => Promise.reject(new Error("TIMEOUT")) };
 	check((await callTask(failing, "Ignore `y.log`.")) === undefined, "a Jev error spawns the agent");
+	check(lastEntry()?.reason === "jev-error", "a Jev error logs jev-error");
+	check(logLines().length === 13, "every git-chores call writes exactly one log line");
+	process.env.GIT_CHORES_FAST_PATH_LOG = join(repo, ".gitignore", "unwritable.jsonl");
+	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `late.log` for everyone."))?.block, "an unwritable log path never breaks the fast path");
+	rmSync(logDir, { recursive: true, force: true });
+	delete process.env.GIT_CHORES_FAST_PATH_LOG;
 	rmSync(repo, { recursive: true, force: true });
 }
 

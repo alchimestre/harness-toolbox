@@ -103,15 +103,30 @@ Only after a pilot pass. Write `cases.jsonl` with the 30 pilot samples (`"split"
 bun "$toolbox/src/crossroads/survey.ts" bench <run-dir> <id> cases.jsonl
 ```
 
-- Set `currentDecider.command` in `bench/<id>/contract.json`: it reads `{"id", "input"}` as JSON on stdin and prints `{"label", "usd"}`. It never sees the reference.
-- Optional `fallbackDecider.command`, same stdin and output: answers the model's fallbacks instead of the current decider.
-- Hand `bench/<id>/` to the `bench-runner` agent: matrix `model` and `current` × every case × reps 1–5, one `run <decider> <case-id> <rep>` per cell, its JSON line appended to a results file, scored by `score <results.jsonl>`. `score` rejects a missing, duplicate or unknown cell.
+## Current decider
+
+The current decider is the real cost that a confident answer replaces, run the way the harness really runs it. Choose the case that fits the candidate:
+
+- The answer lets the harness skip a whole agent turn or tool call. The current decider is that turn or call, run end to end in a temp state built from `input`. Its label is read from the effect it leaves (a file, a commit, a repo state), never from the agent's own report. The candidate names the action that executes a confident answer, set as `action.command`. The model track is Jev plus that action.
+- A standalone LLM call or code rule. The current decider is that call or rule, run as written.
+- The decision sits inside a turn that runs anyway. Replacing it saves nothing. Report the candidate as rejected and do not bench it.
+
+## Contract
+
+Set these in `bench/<id>/contract.json` before running the matrix:
+
+- `currentDecider.command` (required): reads `{"id", "input"}` as JSON on stdin and prints `{"label", "usd"}`. It never sees the reference.
+- `action.command` (skip-turn candidates): reads `{"id", "input", "label"}` and runs only after a confident model answer. It prints `{"label", "usd"}`, where `label` is read from the state the action left, the same way as the current decider's; that label is scored. Its time and usd add to the model's.
+- `fallbackDecider.command` (optional): answers the model's fallbacks instead of the current decider. Leave it unset: a fallback normally runs the real current path.
+- `latency`: `"relative"` when the current decider is a full turn; otherwise leave it absent. The p95 bar becomes the current decider's p95 from the same run.
+
+- Hand `bench/<id>/` to the `bench-runner` agent: matrix `model` and `current` × every case × reps 1–5, one `run <decider> <case-id> <rep>` per cell, its JSON line appended to a results file, scored by `score <results.jsonl>`. `score` rejects a missing, duplicate or unknown cell and its `latencyBar` field names the latency bar that applied.
 
 | Pass bar (holdout only) | Current decider is an LLM | Current decider is code |
 |---|---|---|
 | Accuracy | ≤ 2 points below | ≥ 10 points above |
 | Cost per decision | ≥ 10x lower | not applied |
-| p95 latency | ≤ 2 s | ≤ 2 s |
+| p95 latency | ≤ 2 s, or ≤ current p95 if `latency` is `"relative"` | ≤ 2 s, or ≤ current p95 if `latency` is `"relative"` |
 | Fallback rate | ≤ 20% | ≤ 20% |
 
 # Limits

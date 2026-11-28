@@ -179,6 +179,24 @@ function fullMatrix(cases: BenchCase[], make: (decider: RunResult["decider"], i:
 	check(throws(results.slice(1)), "a missing rep is rejected");
 	check(throws([...results, results[0]]), "a duplicate cell is rejected");
 }
+{
+	const cases: BenchCase[] = Array.from({ length: 10 }, (_, i) => ({ id: `r${i}`, split: i < 3 ? "pilot" : "holdout", input: "", reference: "a", referenceSource: "blind human" }));
+	const timed = (modelMs: number) => fullMatrix(cases, (decider, i, rep) => ({ case: `r${i}`, decider, rep, label: "a", fallback: false, ms: decider === "model" ? modelMs : 100, usd: 0 }));
+	const relative = { class: "llm closed choice" as const, budgetMs: 2_000, latency: "relative" as const };
+	const faster = scoreBench(relative, cases, timed(50));
+	check(faster.checks.passed && faster.latencyBar.includes("current decider"), "relative latency bar passes when model p95 is at or below current p95, and names the bar");
+	const slower = scoreBench(relative, cases, timed(200));
+	check(!slower.checks.latency && !slower.checks.passed, "relative latency bar fails when model p95 is above current p95");
+	check(scoreBench({ class: "llm closed choice" as const, budgetMs: 2_000 }, cases, timed(200)).checks.latency, "absent latency field keeps the absolute budget");
+	const typo = JSON.parse('{"class":"llm closed choice","budgetMs":2000,"latency":"Relative"}');
+	let typoRejected = false;
+	try {
+		scoreBench(typo, cases, timed(50));
+	} catch {
+		typoRejected = true;
+	}
+	check(typoRejected, "an unknown latency value is rejected, not scored against the budget");
+}
 
 // --- generated bench directory, end to end ------------------------------------
 {
@@ -219,4 +237,16 @@ function fullMatrix(cases: BenchCase[], make: (decider: RunResult["decider"], i:
 	leakContract.fallbackDecider = { command: `echo '{"label":"b","usd":0}'` };
 	writeFileSync(contractPath, JSON.stringify(leakContract));
 	check((await runCase(benchDir, "model", "k40", 1, unsure)).label === "b", "a set fallbackDecider answers the model's fallback instead of the current decider");
+	leakContract.action = { command: `sleep 0.2; echo '{"label":"a"}'` };
+	writeFileSync(contractPath, JSON.stringify(leakContract));
+	const acted = await runCase(benchDir, "model", "k0", 1, fake);
+	check(!acted.fallback && acted.label === "a" && acted.ms >= 350, "a confident model answer adds the action's time to its own");
+	leakContract.action = { command: `echo '{}'` };
+	writeFileSync(contractPath, JSON.stringify(leakContract));
+	check((await runCase(benchDir, "model", "k0", 1, fake)).label === null, "an action that reports no resulting state scores as no label, not as Jev's label");
+	const actionStdin = join(root, "action-stdin.json");
+	leakContract.action = { command: `cat > '${actionStdin}'; echo '{"label":"a"}'` };
+	writeFileSync(contractPath, JSON.stringify(leakContract));
+	await runCase(benchDir, "model", "k0", 1, fake);
+	check(Object.keys(JSON.parse(readFileSync(actionStdin, "utf8"))).sort().join() === "id,input,label", "the action sees only id, input and label, never reference or fallbackAnswer");
 }
