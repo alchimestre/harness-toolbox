@@ -1,7 +1,7 @@
 // Wires each extension against a fake harness API. Run: bun test/wiring.ts
 
 import { mock } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +9,8 @@ import readonlyLsp, { READONLY_AGENTS } from "../extensions/readonly-lsp.ts";
 import searchGuard from "../extensions/search-guard.ts";
 import workerSkillTrim from "../extensions/worker-skill-trim.ts";
 import subagentScheduler from "../extensions/subagent-scheduler.ts";
+import gitChoresFastPath from "../extensions/git-chores-fast-path.ts";
+import type { DecisionBackend } from "../src/crossroads/backend.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -223,6 +225,70 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	await Promise.race([evalChild, Bun.sleep(ADMISSION_TIMEOUT_MS)]);
 	check(evalChildAdmitted, "a subagent awaiting eval children frees its slot for them");
 	first.handlers["agent_end"]({}, sub);
+}
+
+// --- git-chores-fast-path ---------------------------------------------------
+{
+	const repo = mkdtempSync(join(tmpdir(), "fast-path-"));
+	const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo }).stdout.toString();
+	git("init", "-q");
+	git("config", "core.excludesfile", "/dev/null");
+	writeFileSync(join(repo, ".gitignore"), "node_modules/\n");
+	writeFileSync(join(repo, "build.log"), "x\n");
+	writeFileSync(join(repo, "notes.md"), "x\n");
+	writeFileSync(join(repo, "db.sqlite3"), "x\n");
+	git("add", ".gitignore", "db.sqlite3");
+	git("-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-qm", "init");
+
+	const CONFIDENT = 0.95;
+	const UNSURE = 0.4;
+	let asked = 0;
+	const fakeJev = (label: string, confidence: number): DecisionBackend => ({
+		name: "fake",
+		limits: { maxStateTokens: 32_000, maxOptions: 255, maxLevels: 10 },
+		usdPerInputToken: 0,
+		ask: async () => {
+			asked++;
+			return { answers: { decision: { label, probabilities: { [label]: confidence }, confidence } }, ms: 0, inputTokens: 0 };
+		},
+	});
+	const callTask = async (backend: DecisionBackend, task: string, agent = "git-chores") => {
+		const { pi, handlers } = fakePi();
+		gitChoresFastPath(pi as never, backend);
+		return (await handlers["tool_call"]({ toolName: "task", input: { tasks: [{ agent, task }] } }, { cwd: repo })) as { block: true; reason: string } | undefined;
+	};
+
+	const ignored = await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `build.log` for everyone.");
+	check(ignored?.block && readFileSync(join(repo, ".gitignore"), "utf8").includes("build.log\n"), "confident gitignore appends the path and blocks the spawn");
+	check(ignored?.reason.includes("Do not retry"), "the block reason tells the parent the chore is done");
+	await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `build.log` for everyone.");
+	check(readFileSync(join(repo, ".gitignore"), "utf8").split("build.log").length === 2, "a repeated gitignore does not duplicate the line");
+	const excluded = await callTask(fakeJev("exclude", CONFIDENT), "Exclude `notes.md`, only on my machine.");
+	check(excluded?.block && readFileSync(join(repo, ".git/info/exclude"), "utf8").includes("notes.md\n"), "confident exclude appends to .git/info/exclude");
+	const untracked = await callTask(fakeJev("untrack", CONFIDENT), "Stop tracking `db.sqlite3`, keep the file.");
+	check(untracked?.block && git("ls-files", "db.sqlite3") === "" && existsSync(join(repo, "db.sqlite3")), "confident untrack removes the path from the index and keeps it on disk");
+	const realContext = "Repo: current working directory. Git hygiene only. Keep `notes.md` untracked and ignored on this machine only, so the change is not committed or pushed. Use the local exclude file (`.git/info/exclude`), not `.gitignore`. Do not commit, push, or rewrite history. If `notes.md` is already tracked, report that and stop without untracking it.";
+	const realAssignment = "# Target\nPath `notes.md` only.\n\n# Change\nAdd `notes.md` to `.git/info/exclude` so it is ignored locally. Do not touch `.gitignore`. Do not commit or push.\n\n# Acceptance\n`git check-ignore -v notes.md` reports a match from `.git/info/exclude`.";
+	const { pi: realPi, handlers: realHandlers } = fakePi();
+	gitChoresFastPath(realPi as never, fakeJev("exclude", CONFIDENT));
+	const realCall = (await realHandlers["tool_call"]({ toolName: "task", input: { context: realContext, tasks: [{ agent: "git-chores", task: realAssignment }] } }, { cwd: repo })) as { block?: boolean } | undefined;
+	check(realCall?.block, "a real parent assignment with ignore-file names and do-not-commit guards takes the fast path");
+	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `../outside.log`.")) === undefined, "a path outside the repo spawns the agent");
+
+	const before = readFileSync(join(repo, ".gitignore"), "utf8");
+	asked = 0;
+	check((await callTask(fakeJev("gitignore", UNSURE), "Ignore `other.log`.")) === undefined, "an unsure Jev answer spawns the agent");
+	check((await callTask(fakeJev("untrack", CONFIDENT), "Untrack `other.log`.")) === undefined, "untrack on an untracked path spawns the agent");
+	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `a.log` and `b.log`.")) === undefined, "two paths spawn the agent");
+	check(asked === 2, "Jev is asked only for one-path chores");
+	asked = 0;
+	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `x.log`, then commit and push.")) === undefined, "a commit or push spawns the agent");
+	check((await callTask(fakeJev("gitignore", CONFIDENT), "What is the status of `x.log`?")) === undefined, "a request without ignore or untrack intent spawns the agent");
+	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `x.log`.", "task")) === undefined, "other agents are untouched");
+	check(asked === 0 && readFileSync(join(repo, ".gitignore"), "utf8") === before, "ineligible calls never reach Jev or touch the repo");
+	const failing: DecisionBackend = { ...fakeJev("gitignore", CONFIDENT), ask: async () => Promise.reject(new Error("TIMEOUT")) };
+	check((await callTask(failing, "Ignore `y.log`.")) === undefined, "a Jev error spawns the agent");
+	rmSync(repo, { recursive: true, force: true });
 }
 
 console.log("\nall wiring checks passed");

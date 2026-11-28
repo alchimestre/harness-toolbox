@@ -88,6 +88,7 @@ extensions:
   - /path/to/harness-toolbox/extensions/readonly-lsp.ts
   - /path/to/harness-toolbox/extensions/worker-skill-trim.ts
   - /path/to/harness-toolbox/extensions/subagent-scheduler.ts
+  - /path/to/harness-toolbox/extensions/git-chores-fast-path.ts
 extensionHandlers:
   toolCallTimeoutMs: 600000
 skills:
@@ -140,6 +141,7 @@ brew install flamegraph
 | readonly-lsp | `extensions/readonly-lsp.ts` | Limits `lsp` for `readonly-reviewer`, `review-high`, and `review-low` to lookup actions. Required by those agents. |
 | worker-skill-trim | `extensions/worker-skill-trim.ts` | Removes the `<skills>` catalog from subagent system prompts. Workers still load a skill by name through `skill://<name>`. |
 | subagent-scheduler | `extensions/subagent-scheduler.ts` | Makes every subagent wait for a machine-wide slot before its first tool call. See [Subagent scheduler](#subagent-scheduler). |
+| git-chores-fast-path | `extensions/git-chores-fast-path.ts` | Does a one-path ignore, exclude, or untrack `git-chores` task itself when Jev is confident, and blocks the spawn with the result. Runs only from the repo root, with an explicit ignore or untrack ask and no commit, push, delete, or other agent-only job. Falls back to the agent on any doubt or Jev error, or without `TYPESAFE_API_KEY`. |
 
 ## Skills
 
