@@ -90,6 +90,7 @@ extensions:
   - /path/to/harness-toolbox/extensions/subagent-scheduler.ts
   - /path/to/harness-toolbox/extensions/git-chores-fast-path.ts
   - /path/to/harness-toolbox/extensions/reviewer-diff-guard.ts
+  - /path/to/harness-toolbox/extensions/progress.ts
 extensionHandlers:
   toolCallTimeoutMs: 600000
 skills:
@@ -107,6 +108,7 @@ providers:
 3. Link the rules and the compatibility skill as startup rules:
 
 ```sh
+mkdir -p ~/.omp/agent/rules
 ln -s /path/to/harness-toolbox/skills/ponytail-compatibility/SKILL.md ~/.omp/agent/rules/ponytail-compatibility.md
 ln -s /path/to/harness-toolbox/rules/code.md ~/.omp/agent/rules/code.md
 ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
@@ -115,10 +117,10 @@ ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
 4. Link the agents and commands into the user agent directory:
 
 ```sh
+mkdir -p ~/.omp/agent/agents ~/.omp/agent/commands
 for agent in task readonly-reviewer review-high review-low task-fast repo-audit bench-runner git-chores; do
   ln -s /path/to/harness-toolbox/agents/$agent.md ~/.omp/agent/agents/$agent.md
 done
-mkdir -p ~/.omp/agent/commands
 ln -s /path/to/harness-toolbox/commands/eli5.md ~/.omp/agent/commands/eli5.md
 ```
 
@@ -142,6 +144,7 @@ brew install flamegraph
 | readonly-lsp | `extensions/readonly-lsp.ts` | Limits `lsp` for `readonly-reviewer`, `review-high`, and `review-low` to lookup actions. Required by those agents. |
 | worker-skill-trim | `extensions/worker-skill-trim.ts` | Removes the `<skills>` catalog from subagent system prompts. Workers still load a skill by name through `skill://<name>`. |
 | subagent-scheduler | `extensions/subagent-scheduler.ts` | Makes every subagent wait for a machine-wide slot before its first tool call. See [Subagent scheduler](#subagent-scheduler). |
+| progress | `extensions/progress.ts` (logic: `src/progress-core.ts`) | Shows a widget above the editor while agents work: one line per agent, main and subagents, with a todo progress bar (done/total) and sparklines of output tokens per second and tool calls over the last two minutes. Subagents have no todo tool by default, so their line shows elapsed time instead. Reads subagent activity from omp's `task:subagent:event` frames. Hides after one minute without activity; a finished subagent's line stays 30 seconds. Interactive TUI only. |
 | git-chores-fast-path | `extensions/git-chores-fast-path.ts` | Does a one-path ignore, exclude, or untrack `git-chores` task itself when Jev is confident, and blocks the spawn with the result. Runs only from the repo root, with an explicit ignore or untrack ask and no commit, push, delete, or other agent-only job. Falls back to the agent on any doubt or Jev error, or without `TYPESAFE_API_KEY`. |
 | git-chores-fast-path | `extensions/git-chores-fast-path.ts` | Does a one-path ignore, exclude, or untrack `git-chores` task itself when Jev is confident, and blocks the spawn with the result. Runs only from the repo root, with an explicit ignore or untrack ask and no commit, push, delete, or other agent-only job. Falls back to the agent on any doubt, a Jev error, a failed git action, or without `TYPESAFE_API_KEY`. Each `git-chores` task call appends one JSON line to the file named by the `GIT_CHORES_FAST_PATH_LOG` env var (default `~/.omp/agent/git-chores-fast-path.jsonl`): `ts`, `outcome` (`fast` or `agent`), `reason`, `label`, `confidence`, `ms`, and `path` when the fast path acted on it. |
 | reviewer-diff-guard | `extensions/reviewer-diff-guard.ts` | Blocks a `task` call that spawns `readonly-reviewer`, `review-high`, or `review-low` with no diff in its task or context, so the parent resends it instead of paying for a `BLOCKED: no diff supplied` reply. Any mention of a diff or patch, a hunk, a `local://` or `pr://` reference, a README, or a whole-repo review lets it through. |
@@ -204,6 +207,7 @@ bun run test
 | `test/wiring.ts` | each extension against a fake harness API; `readonly-lsp` list matches each agent's tools |
 | `test/effort-policy.ts` | `jev-effort-gate` level policy and child-side hook |
 | `test/session-flame.ts` | folded stacks and timeline built from a session transcript |
+| `test/progress.ts` | progress widget's todo bar, time buckets and line |
 | `test/subagent-scheduler.t` | subagent scheduler (Perl) |
 
 ## Bench

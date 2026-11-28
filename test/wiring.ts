@@ -11,6 +11,7 @@ import workerSkillTrim from "../extensions/worker-skill-trim.ts";
 import subagentScheduler from "../extensions/subagent-scheduler.ts";
 import gitChoresFastPath from "../extensions/git-chores-fast-path.ts";
 import reviewerDiffGuard from "../extensions/reviewer-diff-guard.ts";
+import progress from "../extensions/progress.ts";
 import type { DecisionBackend } from "../src/crossroads/backend.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
@@ -339,6 +340,43 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	check(review("Fix the bug in src/app.ts.", "task") === undefined, "other agents are untouched");
 	check(call({ tasks: [{ agent: "task", task: "x" }, { name: "R", agent: "review-low", task: "Review it." }] })?.block, "a call with one diffless reviewer among other tasks is blocked");
 	check(call({ command: "ls" }, "bash") === undefined, "other tools are untouched");
+}
+
+// --- progress -------------------------------------------------------------
+{
+	const listeners: Record<string, ((data: unknown) => void)[]> = {};
+	const events = {
+		on: (channel: string, fn: (data: unknown) => void) => {
+			(listeners[channel] ??= []).push(fn);
+			return () => listeners[channel].splice(listeners[channel].indexOf(fn), 1);
+		},
+		emit: (channel: string, data: unknown) => listeners[channel]?.forEach((fn) => fn(data)),
+	};
+	const widgets: Array<string[] | undefined> = [];
+	const ui = { setWidget: (_key: string, lines: string[] | undefined) => widgets.push(lines) };
+	const main = fakePi();
+	progress({ ...main.pi, events } as never);
+	await main.handlers.session_start({}, { agent: { kind: "main" }, hasUI: true, ui });
+	const subagent = (event: object) => events.emit("task:subagent:event", { id: "ReaderOne", event });
+	const todoDetails = { phases: [{ tasks: [{ status: "completed" }, { status: "pending" }] }] };
+	subagent({ type: "tool_execution_start", toolName: "todo" });
+	subagent({ type: "tool_execution_end", toolName: "todo", result: { details: todoDetails } });
+	subagent({ type: "message_end", message: { role: "assistant", usage: { output: 50 } } });
+	main.handlers.tool_call({ toolName: "task" }, { agent: { kind: "main" } });
+	events.emit("task:subagent:event", { id: "ReaderTwo", event: { type: "tool_execution_start", toolName: "read" } });
+	const REDRAW_WAIT_MS = 1100;
+	await Bun.sleep(REDRAW_WAIT_MS);
+	const lines = widgets.at(-1) ?? [];
+	check(lines.some((line) => line.startsWith("ReaderOne") && line.includes("1/2")), "a subagent's forwarded todo reaches the widget");
+	check(lines.some((line) => line.startsWith("main")), "the main session gets its own line");
+	check(lines.some((line) => line.startsWith("ReaderTwo") && line.includes("s elapsed")), "a subagent without todos shows elapsed time");
+	subagent({ type: "agent_end" });
+	subagent({ type: "tool_execution_start", toolName: "read" });
+	await Bun.sleep(REDRAW_WAIT_MS);
+	const resumedLine = widgets.at(-1)?.find((line) => line.startsWith("ReaderOne")) ?? "";
+	check(resumedLine !== "" && !resumedLine.endsWith(" done"), "a resumed subagent loses its done mark");
+	main.handlers.session_shutdown({}, {});
+	check(widgets.at(-1) === undefined, "shutdown removes the widget");
 }
 
 console.log("\nall wiring checks passed");
