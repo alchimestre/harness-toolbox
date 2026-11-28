@@ -86,7 +86,7 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 {
 	// Dynamic import: the registry subpath does not resolve outside the harness loader, and the
 	// mock must exist before the extension module evaluates. A static import would fail to load.
-	let configured: Record<string, string> = { advisor: "openai-codex/gpt-6.2-sol:high" };
+	let configured: Record<string, string> = { advisor: "openai-codex/gpt-6-luna:high" };
 	const overrides: Array<Record<string, string>> = [];
 	mock.module("@oh-my-pi/pi-coding-agent/config/registry", () => ({
 		lookup: (id: string) =>
@@ -102,10 +102,10 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	const { default: advisorCrossFamily } = await import("../extensions/advisor-cross-family.ts");
 
 	const FAMILY: Record<string, string> = {
+		"openai-codex/gpt-6-luna": "gpt",
 		"openai-codex/gpt-6.2-sol": "gpt",
 		"anthropic/claude-opus-5-5": "claude",
-		"anthropic/claude-sonnet-5-5": "claude",
-		"deepseek/deepseek-v4-pro": "deepseek",
+		"deepseek/deepseek-v4-flash": "deepseek",
 	};
 	const model = (spec: string) => {
 		const id = spec.replace(/:\w+$/, "");
@@ -128,11 +128,11 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 
 	configured = { advisor: "anthropic/claude-opus-5-5:high" };
 	handlers["session_start"]({}, harness("anthropic/claude-opus-5-5"));
-	check(overrides.at(-1)?.advisor === "openai-codex/gpt-6.2-sol:high", "same-family advisor moved to openai");
+	check(overrides.at(-1)?.advisor === "openai-codex/gpt-6-luna:high", "same-family advisor moved to luna");
 
-	configured = { advisor: "openai-codex/gpt-6.2-sol:high" };
+	configured = { advisor: "openai-codex/gpt-6-luna:high" };
 	handlers["session_start"]({}, harness("openai-codex/gpt-6.2-sol"));
-	check(overrides.at(-1)?.advisor === "anthropic/claude-sonnet-5-5:high", "openai primary skips opus whose chain returns to openai");
+	check(overrides.at(-1)?.advisor === "deepseek/deepseek-v4-flash:high", "openai primary moves advisor to deepseek flash");
 
 	// Same-family advisor, so a main session would override: the kind guard is what suppresses the calls below.
 	configured = { advisor: "anthropic/claude-opus-5-5:high" };
@@ -143,7 +143,7 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	check(overrides.length === applied, "subagent fallback leaves the advisor alone");
 
 	handlers["retry_fallback_applied"]({}, harness("anthropic/claude-opus-5-5"));
-	check(overrides.at(-1)?.advisor === "openai-codex/gpt-6.2-sol:high", "main-session fallback applies the override");
+	check(overrides.at(-1)?.advisor === "openai-codex/gpt-6-luna:high", "main-session fallback applies the override");
 }
 
 // --- readonly-lsp ---------------------------------------------------------

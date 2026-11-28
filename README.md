@@ -48,7 +48,7 @@ flowchart LR
 
 - `jev-effort-gate` runs when a subagent starts. It moves only `task`, one effort level at most, within `low`–`high`.
 - A subagent takes a scheduler slot at its first tool call. It releases the slot on a `task`, `wait`, or `eval` call and when its run ends.
-- `advisor-cross-family` runs at session start and after a fallback is applied. It picks the first of `openai-codex/gpt-6.2-sol`, `anthropic/claude-sonnet-5-5`, `deepseek/deepseek-v4-pro` in a different family from the live model. Subagent sessions skip it.
+- `advisor-cross-family` runs at session start and after a fallback is applied. It picks the first of `openai-codex/gpt-6-luna`, `deepseek/deepseek-v4-flash` in a different family from the live model. Subagent sessions skip it.
 
 ### Guards
 
@@ -271,5 +271,5 @@ Recorded results:
 ## Behavior and limits
 
 - **search-guard**: subagents share one budget. The 16th `web_search` call in a session is blocked with a read-the-URLs reason. The retry ban applies only to results that start with `Error:`.
-- **advisor-cross-family**: runs at session start and on `retry_fallback_applied`. Subagent sessions are skipped. It reads the configured role, so a review that a fallback chain lands in the primary's family goes unfixed. Keep primary-family models out of the advisor's chain by hand. The anthropic preference is `claude-sonnet-5-5`, because Opus's fallback chain returns to `gpt-6.2-sol`, a primary-family model in that case. The openai-primary path has not been run end to end.
+- **advisor-cross-family**: runs at session start and on `retry_fallback_applied`. Subagent sessions are skipped. It reads the configured role, so a review that a fallback chain lands in the primary's family goes unfixed; with an openai primary, the advisor chain's last entry `gpt-6.2-sol` is such a case. When neither preference resolves in another family, the advisor is left unchanged. The openai-primary path has not been run end to end.
 - **readonly-lsp**: blocks by agent name, so a reviewer copied under another name gets an unrestricted `lsp`. Add the name to `READONLY_AGENTS`. `test/wiring.ts` fails when an agent has `lsp` without `edit`, `write`, or `bash` and is not listed.

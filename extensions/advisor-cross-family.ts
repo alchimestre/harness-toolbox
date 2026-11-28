@@ -7,12 +7,7 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { lookup } from "@oh-my-pi/pi-coding-agent/config/registry";
 
-const PREFERENCE = [
-	"openai-codex/gpt-6.2-sol:high",
-	// Not opus: its fallback chain returns to gpt-6.2-sol, the primary family in the case this entry serves.
-	"anthropic/claude-sonnet-5-5:high",
-	"deepseek/deepseek-v4-pro:high",
-];
+const PREFERENCE = ["openai-codex/gpt-6-luna:high", "deepseek/deepseek-v4-flash:high"];
 
 type Model = { id: string };
 type Facade = {
