@@ -1,7 +1,7 @@
 ---
 name: readonly-reviewer
 description: >
-  Read-only reviewer for one change: correctness, spec fit, repo standards, security, performance, tests. Returns ranked findings with file:line evidence and a verdict. Needs the diff (inline or a local:// path) and, when one exists, the spec. Never edits.
+  Read-only reviewer for one change: correctness, spec fit, repo standards, security, performance, tests. Returns ranked findings with file:line evidence and a verdict. Needs the diff (inline or a local:// path) or, for a README or whole-repo review, the files to read as they stand; and the spec, when one exists. Never edits.
 tools: read, grep, glob, find, lsp
 blocking: true
 ---

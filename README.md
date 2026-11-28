@@ -174,7 +174,7 @@ brew install flamegraph
 
 | Name | File | What it does |
 |---|---|---|
-| readonly-reviewer | `agents/readonly-reviewer.md` | Read-only change review: spec and standards axes kept separate, then correctness, security, performance, and tests. Needs the diff passed in. |
+| readonly-reviewer | `agents/readonly-reviewer.md` | Read-only change review: spec and standards axes kept separate, then correctness, security, performance, and tests. Needs the diff passed in, or a README or whole-repo review that names the files to read. |
 | review-high, review-low | `agents/review-high.md`, `agents/review-low.md` | `readonly-reviewer` at high and low thinking. Bodies must stay identical to `readonly-reviewer`. |
 | task | `agents/task.md` | Overrides the bundled `task`. Its scope covers every spec violation the assignment names, so it fixes what it notices instead of reporting it. |
 | task-fast | `agents/task-fast.md` | `task` worker for when wall-clock time matters. Pair with a faster, costlier model in `task.agentModelOverrides`. Body must stay identical to `agents/task.md`. |

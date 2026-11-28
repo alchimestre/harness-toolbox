@@ -1,7 +1,7 @@
 ---
 name: review-high
 description: >
-  readonly-reviewer at high thinking: for risky or security-relevant changes. Needs the diff (inline or a local:// path) and, when one exists, the spec. Never edits.
+  readonly-reviewer at high thinking: for risky or security-relevant changes. Needs the diff (inline or a local:// path) or, for a README or whole-repo review, the files to read as they stand; and the spec, when one exists. Never edits.
 tools: read, grep, glob, find, lsp
 blocking: true
 thinking: high
