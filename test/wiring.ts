@@ -332,6 +332,8 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	check(review("Review it.", "readonly-reviewer", "Diff at local://change.md") === undefined, "a diff in the shared context lets the reviewer spawn");
 	check(review("@@ -1,2 +1,3 @@\n-a\n+b") === undefined, "an inline hunk lets the reviewer spawn");
 	check(review("Review pr://12.") === undefined, "a PR reference lets the reviewer spawn");
+	check(review("Read README.md only and report what blocks installation.") === undefined, "a README review lets the reviewer spawn");
+	check(review("Read every module.", "review-high", "Full code review of the repository at ./app") === undefined, "a whole-repo review lets the reviewer spawn");
 	check(review("Fix the bug in src/app.ts.", "task") === undefined, "other agents are untouched");
 	check(call({ tasks: [{ agent: "task", task: "x" }, { name: "R", agent: "review-low", task: "Review it." }] })?.block, "a call with one diffless reviewer among other tasks is blocked");
 	check(call({ command: "ls" }, "bash") === undefined, "other tools are untouched");
