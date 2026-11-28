@@ -182,12 +182,22 @@ function fullMatrix(cases: BenchCase[], make: (decider: RunResult["decider"], i:
 {
 	const cases: BenchCase[] = Array.from({ length: 10 }, (_, i) => ({ id: `r${i}`, split: i < 3 ? "pilot" : "holdout", input: "", reference: "a", referenceSource: "blind human" }));
 	const timed = (modelMs: number) => fullMatrix(cases, (decider, i, rep) => ({ case: `r${i}`, decider, rep, label: "a", fallback: false, ms: decider === "model" ? modelMs : 100, usd: 0 }));
-	const relative = { class: "llm closed choice" as const, budgetMs: 2_000, latency: "relative" as const };
+	const relative = { class: "llm closed choice" as const, latency: "relative" as const };
 	const faster = scoreBench(relative, cases, timed(50));
 	check(faster.checks.passed && faster.latencyBar.includes("current decider"), "relative latency bar passes when model p95 is at or below current p95, and names the bar");
 	const slower = scoreBench(relative, cases, timed(200));
 	check(!slower.checks.latency && !slower.checks.passed, "relative latency bar fails when model p95 is above current p95");
 	check(scoreBench({ class: "llm closed choice" as const, budgetMs: 2_000 }, cases, timed(200)).checks.latency, "absent latency field keeps the absolute budget");
+	const rejection = (contract: object) => {
+		try {
+			scoreBench(contract as never, cases, timed(50));
+			return "";
+		} catch (error) {
+			return String(error);
+		}
+	};
+	check(rejection({ ...relative, budgetMs: 2_000 }).includes("delete budgetMs"), "a contract with both budgetMs and the relative bar is rejected, so the ignored budget cannot mislead");
+	check(rejection({ class: "llm closed choice" }).includes("needs budgetMs"), "a contract with neither latency bar is rejected");
 	const typo = JSON.parse('{"class":"llm closed choice","budgetMs":2000,"latency":"Relative"}');
 	let typoRejected = false;
 	try {
@@ -249,4 +259,7 @@ function fullMatrix(cases: BenchCase[], make: (decider: RunResult["decider"], i:
 	writeFileSync(contractPath, JSON.stringify(leakContract));
 	await runCase(benchDir, "model", "k0", 1, fake);
 	check(Object.keys(JSON.parse(readFileSync(actionStdin, "utf8"))).sort().join() === "id,input,label", "the action sees only id, input and label, never reference or fallbackAnswer");
+	writeFileSync(contractPath, JSON.stringify({ ...leakContract, latency: "relative" }));
+	const loadError = await runCase(benchDir, "model", "k0", 1, fake).then(() => "", (error) => String(error));
+	check(loadError.includes("delete budgetMs"), "run rejects a bad latency contract on its first cell, before any model call");
 }

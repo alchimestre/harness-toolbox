@@ -8,7 +8,7 @@ import { DEFAULT_BUDGET_MS, LLM_CLASSES, percentile95 } from "./records.ts";
 import { MAX_FALLBACK_RATE } from "./pilot.ts";
 
 export type BenchCase = { id: string; split: "pilot" | "holdout"; input: string; reference: string; referenceSource: string; fallbackAnswer?: string };
-type BenchContract = { id: string; class: CandidateRecord["class"]; question: Contract; fallback: string; budgetMs: number; latency?: "relative"; currentDecider: { command: string }; fallbackDecider?: { command: string }; action?: { command: string } };
+type BenchContract = { id: string; class: CandidateRecord["class"]; question: Contract; fallback: string; budgetMs?: number; latency?: "relative"; currentDecider: { command: string }; fallbackDecider?: { command: string }; action?: { command: string } };
 export type RunResult = { case: string; decider: "model" | "current"; rep: number; label: string | null; fallback: boolean; ms: number; usd: number };
 type ModelAnswer = Omit<RunResult, "case" | "decider" | "rep">;
 
@@ -42,6 +42,7 @@ export function writeBench(record: CandidateRecord, cases: BenchCase[], benchDir
 
 function loadBench(benchDir: string): { contract: BenchContract; cases: BenchCase[] } {
 	const contract = JSON.parse(readFileSync(join(benchDir, "contract.json"), "utf8")) as BenchContract;
+	latencyBudget(contract);
 	const cases = readJsonl<BenchCase>(join(benchDir, "cases.jsonl"));
 	return { contract, cases };
 }
@@ -132,9 +133,20 @@ export function requireFullMatrix(cases: BenchCase[], results: RunResult[]): voi
 }
 
 function latencyLimit(contract: Pick<BenchContract, "budgetMs" | "latency">, current: SplitScore): { limitMs: number; label: string } {
-	if (contract.latency === undefined) return { limitMs: contract.budgetMs, label: `model p95 ≤ ${contract.budgetMs} ms` };
-	if (contract.latency !== "relative") throw new Error(`latency must be "relative" or absent, got ${String(contract.latency)}`);
-	return { limitMs: current.p95Ms, label: `model p95 ≤ current decider p95 (${Math.round(current.p95Ms)} ms, same run)` };
+	const budgetMs = latencyBudget(contract);
+	if (budgetMs === "relative") return { limitMs: current.p95Ms, label: `model p95 ≤ current decider p95 (${Math.round(current.p95Ms)} ms, same run)` };
+	return { limitMs: budgetMs, label: `model p95 ≤ ${budgetMs} ms` };
+}
+
+// Runs when a bench loads, so a bad contract fails on the first cell, not after the whole matrix.
+function latencyBudget(contract: Pick<BenchContract, "budgetMs" | "latency">): number | "relative" {
+	if (contract.latency !== undefined && contract.latency !== "relative") throw new Error(`latency must be "relative" or absent, got ${String(contract.latency)}`);
+	if (contract.latency === "relative") {
+		if (contract.budgetMs !== undefined) throw new Error('latency "relative" ignores budgetMs: delete budgetMs from contract.json');
+		return "relative";
+	}
+	if (contract.budgetMs === undefined) throw new Error('contract.json needs budgetMs or latency: "relative"');
+	return contract.budgetMs;
 }
 
 function passChecks(contract: Pick<BenchContract, "class">, model: SplitScore, current: SplitScore, latencyLimitMs: number): Record<string, boolean> {

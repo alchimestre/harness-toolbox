@@ -118,7 +118,7 @@ Set these in `bench/<id>/contract.json` before running the matrix:
 - `currentDecider.command` (required): reads `{"id", "input"}` as JSON on stdin and prints `{"label", "usd"}`. It never sees the reference.
 - `action.command` (skip-turn candidates): reads `{"id", "input", "label"}` and runs only after a confident model answer. It prints `{"label", "usd"}`, where `label` is read from the state the action left, the same way as the current decider's; that label is scored. Its time and usd add to the model's.
 - `fallbackDecider.command` (optional): answers the model's fallbacks instead of the current decider. Leave it unset: a fallback normally runs the real current path.
-- `latency`: `"relative"` when the current decider is a full turn; otherwise leave it absent. The p95 bar becomes the current decider's p95 from the same run.
+- `latency`: `"relative"` when the current decider is a full turn; then delete `budgetMs`, since a contract with both is rejected. The p95 bar becomes the current decider's p95 from the same run.
 
 - Hand `bench/<id>/` to the `bench-runner` agent: matrix `model` and `current` × every case × reps 1–5, one `run <decider> <case-id> <rep>` per cell, its JSON line appended to a results file, scored by `score <results.jsonl>`. `score` rejects a missing, duplicate or unknown cell and its `latencyBar` field names the latency bar that applied.
 
