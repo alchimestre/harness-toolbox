@@ -107,6 +107,7 @@ providers:
 3. Link the rules and the compatibility skill as startup rules:
 
 ```sh
+mkdir -p ~/.omp/agent/rules
 ln -s /path/to/harness-toolbox/skills/ponytail-compatibility/SKILL.md ~/.omp/agent/rules/ponytail-compatibility.md
 ln -s /path/to/harness-toolbox/rules/code.md ~/.omp/agent/rules/code.md
 ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
@@ -115,10 +116,10 @@ ln -s /path/to/harness-toolbox/rules/writing.md ~/.omp/agent/rules/writing.md
 4. Link the agents and commands into the user agent directory:
 
 ```sh
+mkdir -p ~/.omp/agent/agents ~/.omp/agent/commands
 for agent in task readonly-reviewer review-high review-low task-fast repo-audit bench-runner git-chores; do
   ln -s /path/to/harness-toolbox/agents/$agent.md ~/.omp/agent/agents/$agent.md
 done
-mkdir -p ~/.omp/agent/commands
 ln -s /path/to/harness-toolbox/commands/eli5.md ~/.omp/agent/commands/eli5.md
 ```
 
