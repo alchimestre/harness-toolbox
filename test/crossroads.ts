@@ -8,7 +8,7 @@ import type { DecisionBackend, Question } from "../src/crossroads/backend.ts";
 import { effectiveConfidence, isFallback } from "../src/crossroads/backend.ts";
 import type { BenchCase, RunResult } from "../src/crossroads/bench.ts";
 import { HOLDOUT_CASES, PILOT_CASES, runCase, scoreBench, writeBench } from "../src/crossroads/bench.ts";
-import { attachPicks, codeUnits, markdownBlocks, promptUnits, routingUnits } from "../src/crossroads/extract.ts";
+import { attachPicks, branchesOnAnswer, codeUnits, lineChurn, markdownBlocks, promptUnits, routingUnits, schemaLabels } from "../src/crossroads/extract.ts";
 import type { Classified } from "../src/crossroads/records.ts";
 import { applyHumanEdits, buildRecords, carryForward, gateStatus, rank, recordId } from "../src/crossroads/records.ts";
 import { runPilot } from "../src/crossroads/pilot.ts";
@@ -58,6 +58,8 @@ for (const [name, text] of [["a", "Review code."], ["b", "Run benchmarks."]]) {
 mkdirSync(join(root, "extensions"));
 writeFileSync(join(root, "extensions", "gate.ts"), "export function gate(event: { prompt: string }) {\n\tif (/urgent/i.test(event.prompt)) return 'fast';\n\tif (count > 3) return 'slow';\n}\n");
 writeFileSync(join(root, "classify.py"), "def route(client, message):\n    out = client.chat(messages=[{'role': 'user', 'content': 'Answer yes or no: ' + message.body}])\n    return out == 'yes'\n");
+writeFileSync(join(root, "triage.ts"), 'export async function triage(llm: Function, ticket: string) {\n\tconst Team = z.enum(["billing", "technical"]);\n\tconst answer = await llm({ prompt: ticket, schema: Team });\n\tif (answer === "billing") return 1;\n\treturn 2;\n}\n');
+writeFileSync(join(root, "draft.ts"), "export async function draft(llm: Function, ticket: string) {\n\tconst reply = await llm({ prompt: ticket });\n\treturn reply;\n}\n");
 mkdirSync(join(root, "test"));
 writeFileSync(join(root, "test", "fixture.ts"), "export function fixture(event: { prompt: string }) {\n\tif (/urgent/i.test(event.prompt)) return 'fast';\n}\n");
 
@@ -67,6 +69,29 @@ check(routing?.options?.a === "Review code.", "routing catalog unit lists agent 
 check(routing?.occurrences?.count === 2, "transcript picks attach to the routing catalog");
 check(units.filter((unit) => unit.class === "harness branch").length === 1, "only the text-reading harness branch is extracted");
 check(units.some((unit) => unit.class === "llm closed choice" && unit.location.startsWith("classify.py")), "closed-answer LLM call is extracted");
+{
+	const triage = units.find((unit) => unit.location.startsWith("triage.ts"));
+	check(Object.keys(triage?.options ?? {}).join() === "billing,technical" && triage?.branchesOnAnswer === true, "an enum schema supplies the labels; a branch on the answer is seen");
+	check(!units.some((unit) => unit.location.startsWith("draft.ts")), "an LLM call whose answer is returned raw is not extracted");
+	check(units.find((unit) => unit.location.startsWith("classify.py"))?.branchesOnAnswer === true, "a compared Python answer is seen as a branch through extraction");
+	check(schemaLabels("x: Literal['spam', 'ham']").join() === "spam,ham" && schemaLabels("no schema").length === 0, "Literal members are read as labels");
+	const call = "llm({ prompt })";
+	check(branchesOnAnswer(`const { label } = await ${call};\nswitch (label) {}`, call), "a destructured answer that is switched on counts as branched");
+	check(!branchesOnAnswer(`const reply = await ${call};\nreturn reply;`, call), "an answer returned raw is not a branch");
+	const repo = mkdtempSync(join(tmpdir(), "crossroads-churn-"));
+	const git = (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd: repo });
+	git("init", "-q");
+	for (const keywords of ["urgent", "urgent|asap"]) {
+		writeFileSync(join(repo, "rule.ts"), `const first = 1;\nif (/${keywords}/.test(prompt)) go();\n`);
+		git("add", "rule.ts");
+		git("commit", "-qm", keywords);
+	}
+	check(lineChurn(repo, { location: "rule.ts:2", endLine: 2 }) === 2 && lineChurn(repo, { location: "rule.ts:1", endLine: 1 }) === 1, "line churn counts the commits that changed the unit's lines");
+	check(lineChurn(root, { location: "classify.py:2", endLine: 2 }) === null, "line churn is null outside git");
+	writeFileSync(join(repo, "rule.ts"), "// shifted\n");
+	check(lineChurn(repo, { location: "rule.ts:1", endLine: 1 }) === null, "line churn is null for a file with uncommitted edits");
+	rmSync(repo, { recursive: true });
+}
 {
 	const installed = mkdtempSync(join(tmpdir(), "crossroads-installed-"));
 	writeFileSync(join(installed, "scout.md"), "---\ndescription: Explore code.\n---\n");
@@ -89,13 +114,19 @@ check(units.some((unit) => unit.class === "llm closed choice" && unit.location.s
 }
 
 const backend: DecisionBackend = { name: "fake", limits: { maxStateTokens: 32_000, maxOptions: 255, maxLevels: 10 }, usdPerInputToken: 0, ask: async () => ({ answers: {}, ms: 0, inputTokens: 0 }) };
-const allPass = { crossroads: { pYes: 0.9 }, closed_set: { pYes: 0.9 }, independent: { pYes: 0.9 }, rule_decidable: { pYes: 0.1 }, irreplaceable: { pYes: 0.1 }, kind: { label: "yes_no" } };
+const allPass = { crossroads: { pYes: 0.9 }, closed_set: { pYes: 0.9 }, independent: { pYes: 0.9 }, sufficient: { pYes: 0.9 }, sensitive: { pYes: 0.1 }, rule_decidable: { pYes: 0.1 }, irreplaceable: { pYes: 0.1 }, kind: { label: "yes_no" } };
 const classified: Classified[] = units.map((unit) => ({ unit, answers: allPass, ms: 150 }));
 const records = buildRecords(classified, backend);
 {
 	const nearCuts = { ...allPass, closed_set: { pYes: 0.72 }, independent: { pYes: 0.28 } };
 	const [nearRecord] = buildRecords([{ unit: units[0], answers: nearCuts, ms: 150 }], backend);
 	check(nearRecord.gates["closed set"].status === "unknown" && nearRecord.gates.independent.status === "unknown", "p within the dead band of a gate cut stays unknown");
+}
+{
+	const leaky = { ...allPass, sufficient: { pYes: 0.1 }, sensitive: { pYes: 0.9 } };
+	const [leakyRecord] = buildRecords([{ unit: units[0], answers: leaky, ms: 150 }], backend, new Set(), new Set(), () => 4);
+	check(leakyRecord.gates["state sufficient"].status === "fail" && leakyRecord.gates.egress.status === "fail", "outside knowledge or sensitive input fails its gate");
+	check(records[0].gates.egress.status === "pass" && leakyRecord.churn === 4, "clean input passes egress; churn lands on the record");
 }
 {
 	const borderline = (pYes: number): Classified[] => [{ unit: units[0], answers: { ...allPass, crossroads: { pYes } }, ms: 150 }];
@@ -115,15 +146,15 @@ const records = buildRecords(classified, backend);
 }
 const review = records.find((record) => record.excerpt.startsWith("Decide whether"));
 check(review?.locations.length === 2, "identical excerpts in two files merge into one record");
-check(gateStatus(review!) === "unknown" && review!.gates.fallback.status === "unknown", "unaccepted fallback keeps gates unknown, not failed");
+check(gateStatus(review!) === "pass" && review!.gates.fallback.status === "pass", "a proposed fallback is accepted by default");
 check(rank(records)[0].class === "llm closed choice", "llm closed choice ranks first");
 
 const next = buildRecords(classified, backend);
-review!.fallback.accepted = true;
+review!.fallback.accepted = false;
 carryForward(next, records);
 next.forEach(applyHumanEdits);
 const carried = next.find((record) => record.id === review!.id);
-check(carried?.fallback.accepted && gateStatus(carried) === "pass", "accepted fallback carries forward by id and passes the gate");
+check(carried?.fallback.accepted === false && gateStatus(carried) === "unknown", "a human-rejected fallback carries forward by id and keeps the gate unknown");
 {
 	const [promoted, refused] = next;
 	promoted.band = "review";

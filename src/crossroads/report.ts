@@ -39,11 +39,13 @@ function renderRecord(record: CandidateRecord, position: number): string[] {
 	const verdict = record.verdict === null ? "unclassified" : `p=${record.verdict.toFixed(2)}`;
 	const occurrences = record.occurrences ? `${record.occurrences.count}` : "unknown";
 	const pilot = typeof record.pilot === "string" ? record.pilot : JSON.stringify(record.pilot);
+	const evidence = [record.churn == null ? "" : `${record.churn} commits changed these lines`, record.branchesOnAnswer ? "code branches on the LLM answer" : ""].filter(Boolean);
 	return [
 		`### ${position}. \`${record.id}\` ${record.class}: ${record.heading}`,
 		"",
 		`- Where: ${record.locations.join(", ")}`,
 		`- Crossroads ${verdict}; occurrences: ${occurrences}; question kind: ${record.question.kind}`,
+		...(evidence.length ? [`- Evidence: ${evidence.join("; ")}`] : []),
 		`- Gates: ${gates}`,
 		...failed.map(([name, gate]) => `  - ${name}: ${gate.reason}`),
 		`- Fallback: ${record.fallback.proposal} (${record.fallback.accepted ? "accepted" : "not accepted"})`,

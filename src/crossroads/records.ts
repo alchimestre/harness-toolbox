@@ -22,6 +22,8 @@ export type CandidateRecord = {
 	band: Band;
 	crossroads?: boolean;
 	occurrences: Occurrences | null;
+	churn?: number | null;
+	branchesOnAnswer?: boolean;
 	fallback: { proposal: string; accepted: boolean };
 	overrides: Record<string, GateStatus>;
 	pilot: string | Record<string, unknown>;
@@ -47,6 +49,8 @@ export const CLASSIFIER: Record<string, Question> = {
 	independent: { kind: "yes_no", instructions: "Can each case of this pick be judged from the one case in front of it, without comparing it to other cases or earlier picks?" },
 	rule_decidable: { kind: "yes_no", instructions: "Could a regex, file check or short script make this pick reliably, with no judgment of meaning?" },
 	irreplaceable: { kind: "yes_no", instructions: "Is this a security or permission check, a path that must work offline or without an API key, a hot loop, or a decision that must be reproducible for an audit?" },
+	sufficient: { kind: "yes_no", instructions: "Is everything needed to make this pick in the text the decider reads at that point, with no outside knowledge, lookup or comparison against other material?" },
+	sensitive: { kind: "yes_no", instructions: "Does the text this pick reads hold personal data, credentials, or regulated content such as health or payment records?" },
 	kind: { kind: "choice", instructions: "What answer shape would this pick need?", labels: { yes_no: "a single yes or no", label: "one label from several named options", score: "a graded level on a scale", none: "not a pick" } },
 };
 
@@ -89,7 +93,7 @@ export function percentile95(values: number[]): number | undefined {
 // Merges identical normalised excerpts into one record and drops units below the review floor.
 // A record from the previous run stays until p drops below the floor minus DEAD_BAND; a new one enters at the floor plus DEAD_BAND.
 // A record with a human crossroads verdict stays whatever its p.
-export function buildRecords(classified: Classified[], backend: DecisionBackend, previousIds: Set<string> = new Set(), labelledIds: Set<string> = new Set()): CandidateRecord[] {
+export function buildRecords(classified: Classified[], backend: DecisionBackend, previousIds: Set<string> = new Set(), labelledIds: Set<string> = new Set(), churnOf: (unit: Unit) => number | null = () => null): CandidateRecord[] {
 	const p95 = percentile95(classified.flatMap((c) => (c.ms === null ? [] : [c.ms])));
 	const records = new Map<string, CandidateRecord>();
 	for (const item of classified) {
@@ -102,12 +106,12 @@ export function buildRecords(classified: Classified[], backend: DecisionBackend,
 			existing.locations.push(item.unit.location);
 			continue;
 		}
-		records.set(id, newRecord(id, item, verdict, backend, p95));
+		records.set(id, newRecord(id, item, verdict, backend, p95, churnOf(item.unit)));
 	}
 	return [...records.values()];
 }
 
-function newRecord(id: string, item: Classified, verdict: number | null, backend: DecisionBackend, p95: number | undefined): CandidateRecord {
+function newRecord(id: string, item: Classified, verdict: number | null, backend: DecisionBackend, p95: number | undefined, churn: number | null): CandidateRecord {
 	const { unit, answers } = item;
 	const record: CandidateRecord = {
 		id,
@@ -121,7 +125,9 @@ function newRecord(id: string, item: Classified, verdict: number | null, backend
 		verdict,
 		band: verdict !== null && verdict >= CANDIDATE_FLOOR ? "candidate" : "review",
 		occurrences: unit.occurrences ?? null,
-		fallback: { proposal: proposeFallback(unit.class), accepted: false },
+		churn,
+		branchesOnAnswer: unit.branchesOnAnswer,
+		fallback: { proposal: proposeFallback(unit.class), accepted: true },
 		overrides: {},
 		pilot: "not pilot-ready",
 		benchmark: "not run",
@@ -132,10 +138,11 @@ function newRecord(id: string, item: Classified, verdict: number | null, backend
 
 function proposeQuestion(unit: Unit, answers: Record<string, Answer> | null): Contract {
 	const reference = unit.occurrences ? "logged picks from transcripts" : "";
-	if (unit.options) {
+	if (unit.options && unit.heading.endsWith(" routing")) {
 		const instructions = `Which ${unit.heading.replace(" routing", "")} should handle this request?`;
 		return { kind: "choice", instructions, labels: unit.options, input: "the request or assignment text", reference };
 	}
+	if (unit.options) return { kind: "choice", instructions: "", labels: unit.options, input: "", reference };
 	const kind = answers?.kind?.label;
 	if (kind === "yes_no") return { kind: "yes_no", instructions: "", labels: { yes: "", no: "" }, input: "", reference };
 	return { kind: kind === "score" ? "score" : "choice", instructions: "", labels: {}, input: "", reference };
@@ -152,10 +159,12 @@ export function evaluateGates(record: CandidateRecord, answers: Record<string, A
 	const gates: Record<string, Gate> = {
 		"closed set": tri(p("closed_set"), false, "options named or implied", missing),
 		independent: tri(p("independent"), false, "each case judged alone", missing),
+		"state sufficient": tri(p("sufficient"), false, "answer recoverable from what the decider reads", missing),
+		egress: tri(p("sensitive"), true, "input holds no personal, secret or regulated data", missing),
 		"not rule-decidable": tri(p("rule_decidable"), true, "needs judgment of meaning", missing),
 		"context fits": tokens <= backend.limits.maxStateTokens ? { status: "pass", reason: `~${tokens} tokens of ${backend.limits.maxStateTokens}` } : { status: "fail", reason: `~${tokens} tokens over ${backend.limits.maxStateTokens}` },
 		latency: p95 === undefined ? { status: "unknown", reason: "no measured calls" } : { status: p95 <= DEFAULT_BUDGET_MS ? "pass" : "fail", reason: `measured p95 ${Math.round(p95)} ms vs ${DEFAULT_BUDGET_MS} ms default budget` },
-		fallback: record.fallback.accepted ? { status: "pass", reason: "accepted by a human" } : { status: "unknown", reason: "proposed, not yet accepted" },
+		fallback: fallbackGate(record),
 		replaceable: tri(p("irreplaceable"), true, "not security, offline, hot-loop or audit", missing),
 	};
 	for (const [name, status] of Object.entries(record.overrides)) gates[name] = { status, reason: "human override" };
@@ -181,10 +190,10 @@ export function pilotReady(record: CandidateRecord): boolean {
 	return fallback.accepted && labels >= MIN_LABELS && Boolean(question.instructions && question.input && question.reference);
 }
 
-export function rankKey(record: CandidateRecord): [number, number, number, number] {
+export function rankKey(record: CandidateRecord): [number, number, number, number, number] {
 	const status = gateStatus(record) === "pass" ? 0 : 1;
 	const occurrences = record.occurrences?.count ?? -1;
-	return [status, CLASS_ORDER.indexOf(record.class), -occurrences, -(record.verdict ?? 0)];
+	return [status, CLASS_ORDER.indexOf(record.class), -occurrences, -(record.churn ?? 0), -(record.verdict ?? 0)];
 }
 
 export function rank(records: CandidateRecord[]): CandidateRecord[] {
@@ -206,17 +215,22 @@ export function carryForward(records: CandidateRecord[], previous: CandidateReco
 		if (!before) continue;
 		const derivedLabels = Object.keys(record.question.labels ?? {}).length ? record.question.labels : undefined;
 		for (const field of CARRIED) (record as Record<string, unknown>)[field] = before[field];
-		if (derivedLabels) record.question = { ...record.question, labels: derivedLabels };
+		const humanCriteria = before.question.labels ?? {};
+		if (derivedLabels) record.question = { ...record.question, labels: Object.fromEntries(Object.entries(derivedLabels).map(([label, criterion]) => [label, criterion || humanCriteria[label] || ""])) };
 	}
 }
 
-// Gates a human decided: an accepted fallback, explicit overrides, and the crossroads verdict.
+// Gates a human decided: a rejected fallback, explicit overrides, and the crossroads verdict.
 export function applyHumanEdits(record: CandidateRecord): void {
-	if (record.fallback.accepted) record.gates.fallback = { status: "pass", reason: "accepted by a human" };
+	record.gates.fallback = fallbackGate(record);
 	for (const [name, status] of Object.entries(record.overrides)) record.gates[name] = { status, reason: "human override" };
 	if (record.crossroads === undefined) return;
 	record.band = record.crossroads ? "candidate" : "review";
 	record.gates.crossroads = record.crossroads ? { status: "pass", reason: "human: a crossroads" } : { status: "fail", reason: "human: not a crossroads" };
+}
+
+function fallbackGate(record: CandidateRecord): Gate {
+	return record.fallback.accepted ? { status: "pass", reason: "proposed fallback accepted" } : { status: "unknown", reason: "fallback rejected by a human" };
 }
 
 export type RunDiff = { added: string[]; gone: CandidateRecord[]; moved: string[] };

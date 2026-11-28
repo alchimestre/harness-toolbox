@@ -14,6 +14,8 @@ export type Unit = {
 	context: string; // what the classifier reads
 	options?: Record<string, string>;
 	occurrences?: Occurrences;
+	endLine?: number; // code units: last line of the matched statement
+	branchesOnAnswer?: boolean;
 };
 
 export type Occurrences = { count: number; samples: Pick[] };
@@ -265,9 +267,57 @@ function branchUnits(matches: Match[]): Unit[] {
 function llmCallUnits(matches: Match[]): Unit[] {
 	return matches
 		.filter((m) => m.ruleId === "call" && PROMPT_ARGUMENT.test(m.text))
-		.filter((m) => CLOSED_ANSWER.test(enclosing(matches, m)?.text ?? m.text))
+		.filter((m) => CLOSED_ANSWER.test(scopeText(matches, m)) || branchesOnAnswer(scopeText(matches, m), m.text))
 		.filter((m, index, calls) => !calls.some((outer, j) => j !== index && outer.file === m.file && outer.text.length > m.text.length && outer.text.includes(m.text)))
-		.map((m) => codeUnit(matches, m, HARNESS_PATH.test(m.file) ? "harness code" : "other repo", "llm closed choice"));
+		.map((m) => llmCallUnit(matches, m));
+}
+
+function llmCallUnit(matches: Match[], m: Match): Unit {
+	const unit = codeUnit(matches, m, HARNESS_PATH.test(m.file) ? "harness code" : "other repo", "llm closed choice");
+	const scope = scopeText(matches, m);
+	const labels = schemaLabels(scope);
+	unit.branchesOnAnswer = branchesOnAnswer(scope, m.text);
+	if (labels.length >= MIN_CONDITION_ITEMS) unit.options = Object.fromEntries(labels.map((label) => [label, ""]));
+	return unit;
+}
+
+function scopeText(matches: Match[], m: Match): string {
+	return enclosing(matches, m)?.text ?? m.text;
+}
+
+const LABEL_SCHEMA = /z\.enum\(\s*\[([^\]]*)\]|Literal\[([^\]]*)\]|["']?enum["']?\s*[:=]\s*\[([^\]]*)\]/;
+const QUOTED = /(["'`])((?:\\.|(?!\1).)*)\1/g;
+
+// shortcut: reads the first enum schema inside the enclosing function; a schema declared at module level is missed, follow the identifier when that costs labels.
+export function schemaLabels(code: string): string[] {
+	const schema = code.match(LABEL_SCHEMA);
+	const members = schema?.[1] ?? schema?.[2] ?? schema?.[3] ?? "";
+	return [...members.matchAll(QUOTED)].map((quoted) => quoted[2]);
+}
+
+const ASSIGNED_NAME = /(?:(\w+)|\{\s*(\w+)[^}]*\})\s*(?::[^=\n]+)?=\s*(?:await\s+)?$/;
+
+// shortcut: follows the variable the call is assigned to, by name, inside the enclosing function; an answer returned raw or passed on is not seen, trace data flow when recall matters.
+export function branchesOnAnswer(scope: string, call: string): boolean {
+	const callStart = scope.indexOf(call);
+	if (callStart === -1) return false;
+	const assigned = scope.slice(0, callStart).match(ASSIGNED_NAME);
+	const name = assigned?.[1] ?? assigned?.[2];
+	if (!name) return false;
+	const afterCall = scope.slice(callStart + call.length);
+	const branchOnName = new RegExp(`\\b(if|elif|switch|match|while|case)\\b[^\\n]*\\b${name}\\b|\\b${name}\\b[^\\n;]*?(===?|!==?|\\bin\\b|\\.(includes|startsWith|startswith|test)\\()`);
+	return branchOnName.test(afterCall);
+}
+
+// Commits that changed the unit's lines, the creating commit included; null outside git, for lines git cannot trace,
+// and for a file with uncommitted edits, whose working-tree line numbers no longer match HEAD.
+export function lineChurn(root: string, unit: { location: string; endLine?: number }): number | null {
+	const [, file, startLine] = unit.location.match(/^(.*):(\d+)$/) ?? [];
+	if (!file || unit.endLine === undefined) return null;
+	const clean = spawnSync("git", ["diff", "--quiet", "HEAD", "--", file], { cwd: root });
+	if (clean.status !== 0) return null;
+	const log = spawnSync("git", ["log", "--no-patch", "--format=%H", `-L${startLine},${unit.endLine}:${file}`], { cwd: root, encoding: "utf8" });
+	return log.status === 0 ? log.stdout.split("\n").filter(Boolean).length : null;
 }
 
 function codeUnit(matches: Match[], m: Match, source: Source, unitClass: CrossroadsClass): Unit {
@@ -276,6 +326,7 @@ function codeUnit(matches: Match[], m: Match, source: Source, unitClass: Crossro
 		source,
 		class: unitClass,
 		location: `${m.file}:${m.range.start.line + 1}`,
+		endLine: m.range.end.line + 1,
 		heading: fn?.text.split("\n")[0].trim() ?? relative(".", m.file),
 		excerpt: m.text.split("\n")[0].trim(),
 		context: (fn?.text ?? m.text).slice(0, MAX_CONTEXT_CHARS),

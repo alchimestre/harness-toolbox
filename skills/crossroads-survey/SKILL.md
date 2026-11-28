@@ -55,6 +55,7 @@ bun "$toolbox/src/crossroads/survey.ts" survey <target> --picks <target>/.scratc
 ```
 
 3. Read `<target>/.scratch/crossroads/<date>/report.md` and report the top 5 of "Ranked", then "Not pilot-ready", with the reason each is not pilot-ready.
+4. Draft the question for every record under "Not pilot-ready": read the code or prompt at each `Where`, then set `question.instructions`, a one-line criterion per label and `question.input` on the record's line in `candidates.jsonl`. Set `question.reference` only when transcripts or logs hold the right answer; never invent one. Leave the question empty when the text holds no single closed pick, and list those records with the reason. Rerun `report`.
 
 Output stays in `<target>/.scratch/crossroads/`. The survey adds `.scratch/` to the target's `.git/info/exclude` when git doesn't already ignore it; it never edits `.gitignore`.
 
@@ -68,7 +69,9 @@ Output stays in `<target>/.scratch/crossroads/`. The survey adds `.scratch/` to 
 | Review band | Crossroads p 0.3–0.7: a human decides |
 | Rejected appendix | Any gate failed |
 
-Rank order: all gates pass, then class (LLM closed choice, prompt instruction, harness branch, rule pretending to judge), then transcript occurrences, then crossroads probability.
+Rank order: all gates pass, then class (LLM closed choice, prompt instruction, harness branch, rule pretending to judge), then transcript occurrences, then line churn (commits that changed the matched code), then crossroads probability.
+
+An LLM call with an enum schema (`z.enum`, `Literal[...]`, JSON `enum`) gets its `question.labels` from the schema; add each label's criterion by hand.
 
 # Human edits
 
@@ -76,12 +79,12 @@ Edit the record's line in `candidates.jsonl`, then run `bun "$toolbox/src/crossr
 
 | Field | Edit |
 |---|---|
-| `fallback.accepted` | `true` once a human accepts the proposed fallback |
+| `fallback.accepted` | `true` by default; `false` once a human rejects the proposed fallback |
 | `question` | `instructions`, `labels` (label → one-line criterion), `input` (what the model sees), `reference` (where the right answer comes from) |
 | `overrides` | `{"<gate>": "pass"}` or `"fail"` where the classifier is wrong |
 | `crossroads` | `true`: a real crossroads, moves to the candidate sections whatever its p. `false`: not one, rejected. Also the label for piloting the crossroads question itself |
 
-Never set `fallback.accepted`, an override or `crossroads` yourself: ask the user.
+Never set an override, `crossroads` or `fallback.accepted: false` yourself: ask the user.
 
 # Pilot
 
@@ -135,6 +138,9 @@ Set these in `bench/<id>/contract.json` before running the matrix:
 - "Reads prompt text" in code is guessed from identifier names, not traced.
 - Transcript picks use today's routing catalog, not the one live at each pick.
 - Code extraction covers Python and TypeScript only.
+- Schema labels and the branch-on-answer test read the enclosing function only: a module-level schema or an answer passed to another function is missed.
+- Line churn is unknown for a file with uncommitted edits: commit before surveying.
+- The `state sufficient` and `egress` gates are classifier guesses from the code or prompt, not from real inputs: check egress yourself before a pilot sends data.
 - The `crossroads` verdict ranks blind-labelled units only moderately: AUC about 0.74 on prompt text and 0.62 on code, from 37 units. Read it as an ordering for review, not as a cut-off.
 - Prompt units show the classifier their heading and their own text. Do not widen that to the whole section: units next to a decision then score as decisions, and held-out AUC drops.
 - Measure an extraction or wording change on units labelled blind, before their verdicts are seen. Relabelling units the verdict disagrees with fits the labels to the classifier and inflates AUC.

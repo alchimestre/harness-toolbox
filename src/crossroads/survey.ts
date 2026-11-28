@@ -7,7 +7,7 @@ import { jevBackend } from "./backend.ts";
 import type { BenchCase } from "./bench.ts";
 import { readJsonl, runCase, scoreBenchDir, writeBench } from "./bench.ts";
 import type { Pick } from "./extract.ts";
-import { attachPicks, codeUnits, promptUnits } from "./extract.ts";
+import { attachPicks, codeUnits, lineChurn, promptUnits } from "./extract.ts";
 import type { Sample } from "./pilot.ts";
 import { runPilot } from "./pilot.ts";
 import type { CandidateRecord, RunDiff } from "./records.ts";
@@ -56,7 +56,7 @@ async function survey(args: string[]): Promise<void> {
 	const stateDir = existsSync(join(runDir, "candidates.jsonl")) ? runDir : previousDir;
 	const state = stateDir === previousDir ? previous : loadRecords(runDir);
 	const labelledIds = new Set(state.filter((record) => record.crossroads !== undefined).map((record) => record.id));
-	const records = buildRecords(classified, backend, new Set(state.map((record) => record.id)), labelledIds);
+	const records = buildRecords(classified, backend, new Set(state.map((record) => record.id)), labelledIds, (unit) => lineChurn(target, unit));
 	carryForward(records, state);
 	excludeScratch(target);
 	const firstError = failures[0] ? ` First failure: ${failures[0].error}.` : "";
