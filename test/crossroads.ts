@@ -216,4 +216,7 @@ function fullMatrix(cases: BenchCase[], make: (decider: RunResult["decider"], i:
 	const seenInputs = readFileSync(stdinLog, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
 	check(fellBack.fallback && seenInputs.length === 2 && seenInputs.every((seen) => Object.keys(seen).sort().join() === "id,input"), "the current decider and the model's fallback see only id and input, never reference or fallbackAnswer");
 	check(JSON.parse(score(results).stdout).holdoutReferenceSources.join() === "blind agent", "a blind-agent holdout is accepted and named in the score output");
+	leakContract.fallbackDecider = { command: `echo '{"label":"b","usd":0}'` };
+	writeFileSync(contractPath, JSON.stringify(leakContract));
+	check((await runCase(benchDir, "model", "k40", 1, unsure)).label === "b", "a set fallbackDecider answers the model's fallback instead of the current decider");
 }

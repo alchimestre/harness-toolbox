@@ -104,6 +104,7 @@ bun "$toolbox/src/crossroads/survey.ts" bench <run-dir> <id> cases.jsonl
 ```
 
 - Set `currentDecider.command` in `bench/<id>/contract.json`: it reads `{"id", "input"}` as JSON on stdin and prints `{"label", "usd"}`. It never sees the reference.
+- Optional `fallbackDecider.command`, same stdin and output: answers the model's fallbacks instead of the current decider.
 - Hand `bench/<id>/` to the `bench-runner` agent: matrix `model` and `current` × every case × reps 1–5, one `run <decider> <case-id> <rep>` per cell, its JSON line appended to a results file, scored by `score <results.jsonl>`. `score` rejects a missing, duplicate or unknown cell.
 
 | Pass bar (holdout only) | Current decider is an LLM | Current decider is code |

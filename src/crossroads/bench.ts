@@ -8,7 +8,7 @@ import { DEFAULT_BUDGET_MS, LLM_CLASSES, percentile95 } from "./records.ts";
 import { MAX_FALLBACK_RATE } from "./pilot.ts";
 
 export type BenchCase = { id: string; split: "pilot" | "holdout"; input: string; reference: string; referenceSource: string; fallbackAnswer?: string };
-type BenchContract = { id: string; class: CandidateRecord["class"]; question: Contract; fallback: string; budgetMs: number; currentDecider: { command: string } };
+type BenchContract = { id: string; class: CandidateRecord["class"]; question: Contract; fallback: string; budgetMs: number; currentDecider: { command: string }; fallbackDecider?: { command: string } };
 export type RunResult = { case: string; decider: "model" | "current"; rep: number; label: string | null; fallback: boolean; ms: number; usd: number };
 
 export const PILOT_CASES = 30;
@@ -49,18 +49,18 @@ export function readJsonl<T>(path: string): T[] {
 	return readFileSync(path, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as T);
 }
 
-// Answers one case with one decider; the model falls back to the current decider, as its accepted fallback.
+// Answers one case with one decider; the model falls back to fallbackDecider when set, else to the current decider.
 export async function runCase(benchDir: string, decider: string, caseId: string, rep: number, backend: DecisionBackend): Promise<RunResult> {
 	if (!Number.isInteger(rep) || rep < 1 || rep > REPS) throw new Error(`rep must be 1..${REPS}, got ${rep}`);
 	const { contract, cases } = loadBench(benchDir);
 	const item = cases.find((candidate) => candidate.id === caseId);
 	if (!item) throw new Error(`no case ${caseId}`);
-	if (decider === "current") return { case: caseId, decider: "current", rep, ...runCurrent(contract, item), fallback: false };
+	if (decider === "current") return { case: caseId, decider: "current", rep, ...runCommand(contract.currentDecider.command, item), fallback: false };
 	if (decider !== "model") throw new Error(`decider must be model or current, got ${decider}`);
 	const model = await askModel(contract, item, backend);
 	if (!model.fallback) return { case: caseId, decider: "model", rep, ...model };
-	const current = runCurrent(contract, item);
-	return { case: caseId, decider: "model", rep, label: current.label, fallback: true, ms: model.ms + current.ms, usd: model.usd + current.usd };
+	const fallback = runCommand(contract.fallbackDecider?.command || contract.currentDecider.command, item);
+	return { case: caseId, decider: "model", rep, label: fallback.label, fallback: true, ms: model.ms + fallback.ms, usd: model.usd + fallback.usd };
 }
 
 async function askModel(contract: BenchContract, item: BenchCase, backend: DecisionBackend): Promise<Omit<RunResult, "case" | "decider" | "rep">> {
@@ -76,14 +76,14 @@ async function askModel(contract: BenchContract, item: BenchCase, backend: Decis
 	}
 }
 
-function runCurrent(contract: BenchContract, item: BenchCase): { label: string | null; ms: number; usd: number } {
-	if (!contract.currentDecider.command) throw new Error("set currentDecider.command in contract.json: it reads {\"id\", \"input\"} on stdin and prints {\"label\", \"usd\"}");
+function runCommand(command: string, item: BenchCase): { label: string | null; ms: number; usd: number } {
+	if (!command) throw new Error("set currentDecider.command in contract.json: it reads {\"id\", \"input\"} on stdin and prints {\"label\", \"usd\"}");
 	const started = performance.now();
 	// Only decision inputs: reference or fallbackAnswer on stdin would let the decider, and the model's fallback, read the answer.
 	const decisionInput = JSON.stringify({ id: item.id, input: item.input });
-	const run = spawnSync("sh", ["-c", contract.currentDecider.command], { input: decisionInput, encoding: "utf8" });
+	const run = spawnSync("sh", ["-c", command], { input: decisionInput, encoding: "utf8" });
 	const ms = performance.now() - started;
-	if (run.status !== 0) throw new Error(`current decider failed: ${run.stderr}`);
+	if (run.status !== 0) throw new Error(`decider command failed: ${run.stderr}`);
 	const output = JSON.parse(run.stdout) as { label?: string; usd?: number };
 	return { label: output.label ?? null, ms, usd: output.usd ?? 0 };
 }
