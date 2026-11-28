@@ -60,7 +60,7 @@ retry:
       - anthropic/claude-sonnet-5-5
       - openai-codex/gpt-6.2-sol
     advisor:
-      - deepseek/deepseek-v4-flash
+      - deepseek/deepseek-v4-flash:high
       - openai-codex/gpt-6.2-sol
 compaction:
   modelThresholds:
