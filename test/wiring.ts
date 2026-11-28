@@ -334,6 +334,8 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	check(review("Review pr://12.") === undefined, "a PR reference lets the reviewer spawn");
 	check(review("Read README.md only and report what blocks installation.") === undefined, "a README review lets the reviewer spawn");
 	check(review("Read every module.", "review-high", "Full code review of the repository at ./app") === undefined, "a whole-repo review lets the reviewer spawn");
+	check(review("of the repository at ./app.", "review-high", "Comprehensive review") === undefined, "a whole-repo review split across context and task lets the reviewer spawn");
+	check(review("Review the change to src/app.ts. Repo root: ./app.", "review-low", "Report the full list of findings, ranked by severity, one line each.")?.block, "a diffless review that only mentions a repo far from a scope word is blocked");
 	check(review("Fix the bug in src/app.ts.", "task") === undefined, "other agents are untouched");
 	check(call({ tasks: [{ agent: "task", task: "x" }, { name: "R", agent: "review-low", task: "Review it." }] })?.block, "a call with one diffless reviewer among other tasks is blocked");
 	check(call({ command: "ls" }, "bash") === undefined, "other tools are untouched");

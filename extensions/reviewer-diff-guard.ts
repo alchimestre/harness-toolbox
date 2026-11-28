@@ -6,7 +6,10 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 export const REVIEWERS: Record<string, true> = { "readonly-reviewer": true, "review-high": true, "review-low": true };
 const DIFF_SIGN = /\bdiff\b|\bpatch\b|^@@ |^\+\+\+ |^--- |local:\/\/|pr:\/\//im;
-const STANDING_FILES_SIGN = /\bREADME\b|\b(whole|entire|full|comprehensive)\b.*\b(repo|repository|codebase)\b/i;
+// The scope word and the repo word may sit on different lines (context, then task), but only this close together:
+// an unbounded gap would pass any diffless review that says "full" early and "repo" late.
+const SCOPE_TO_REPO_MAX_CHARS = 60;
+const STANDING_FILES_SIGN = new RegExp(`\\bREADME\\b|\\b(whole|entire|full|comprehensive)\\b[\\s\\S]{0,${SCOPE_TO_REPO_MAX_CHARS}}\\b(repo|repository|codebase)\\b`, "i");
 
 type TaskInput = { context?: string; tasks?: { name?: string; agent?: string; task?: string }[] };
 type ToolCallEvent = { toolName: string; input: TaskInput };
