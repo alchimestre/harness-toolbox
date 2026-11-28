@@ -204,4 +204,16 @@ function fullMatrix(cases: BenchCase[], make: (decider: RunResult["decider"], i:
 	check(score(results.slice(0, results.length / 2)).status !== 0, "generated score script rejects a partial matrix");
 	const full = score(results);
 	check(full.status === 0 && JSON.parse(full.stdout).checks.passed === true, "generated score script passes a complete matrix");
+	const stdinLog = join(root, "current-stdin.jsonl");
+	const leakCases = cases.map((item) => ({ ...item, referenceSource: item.split === "holdout" ? "blind agent" : item.referenceSource, fallbackAnswer: "b" }));
+	writeBench(record, leakCases, benchDir);
+	const leakContract = JSON.parse(readFileSync(contractPath, "utf8"));
+	leakContract.currentDecider.command = `cat >> '${stdinLog}'; echo >> '${stdinLog}'; echo '{"label":"a","usd":0}'`;
+	writeFileSync(contractPath, JSON.stringify(leakContract));
+	const unsure: DecisionBackend = { ...backend, ask: async () => ({ answers: { decision: { label: "a", confidence: 0.1 } }, ms: 1, inputTokens: 1 }) };
+	const fellBack = await runCase(benchDir, "model", "k40", 1, unsure);
+	await runCase(benchDir, "current", "k40", 1, unsure);
+	const seenInputs = readFileSync(stdinLog, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+	check(fellBack.fallback && seenInputs.length === 2 && seenInputs.every((seen) => Object.keys(seen).sort().join() === "id,input"), "the current decider and the model's fallback see only id and input, never reference or fallbackAnswer");
+	check(JSON.parse(score(results).stdout).holdoutReferenceSources.join() === "blind agent", "a blind-agent holdout is accepted and named in the score output");
 }

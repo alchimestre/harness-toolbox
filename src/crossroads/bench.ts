@@ -13,7 +13,7 @@ export type RunResult = { case: string; decider: "model" | "current"; rep: numbe
 
 export const PILOT_CASES = 30;
 export const HOLDOUT_CASES = 70;
-const BLIND = "blind human";
+const BLIND_SOURCES = ["blind human", "blind agent"];
 const MAX_ACCURACY_DROP = 0.02;
 const MIN_ACCURACY_GAIN = 0.1;
 const MIN_COST_RATIO = 10;
@@ -26,8 +26,8 @@ export function writeBench(record: CandidateRecord, cases: BenchCase[], benchDir
 	if (!passed) throw new Error(`${record.id} has not passed its pilot`);
 	const count = (split: string) => cases.filter((item) => item.split === split).length;
 	if (count("pilot") !== PILOT_CASES || count("holdout") !== HOLDOUT_CASES) throw new Error(`need ${PILOT_CASES} pilot and ${HOLDOUT_CASES} holdout cases, got ${count("pilot")} and ${count("holdout")}`);
-	const unblind = cases.filter((item) => item.split === "holdout" && item.referenceSource !== BLIND);
-	if (unblind.length) throw new Error(`holdout references must be "${BLIND}"; ${unblind.length} are not`);
+	const unblind = cases.filter((item) => item.split === "holdout" && !BLIND_SOURCES.includes(item.referenceSource));
+	if (unblind.length) throw new Error(`holdout references must come from ${BLIND_SOURCES.join(" or ")}; ${unblind.length} do not`);
 	mkdirSync(benchDir, { recursive: true });
 	const contract: BenchContract = { id: record.id, class: record.class, question: record.question, fallback: record.fallback.proposal, budgetMs: DEFAULT_BUDGET_MS, currentDecider: { command: "" } };
 	writeFileSync(join(benchDir, "contract.json"), `${JSON.stringify(contract, null, 2)}\n`);
@@ -77,9 +77,11 @@ async function askModel(contract: BenchContract, item: BenchCase, backend: Decis
 }
 
 function runCurrent(contract: BenchContract, item: BenchCase): { label: string | null; ms: number; usd: number } {
-	if (!contract.currentDecider.command) throw new Error("set currentDecider.command in contract.json: it reads the case JSON on stdin and prints {\"label\", \"usd\"}");
+	if (!contract.currentDecider.command) throw new Error("set currentDecider.command in contract.json: it reads {\"id\", \"input\"} on stdin and prints {\"label\", \"usd\"}");
 	const started = performance.now();
-	const run = spawnSync("sh", ["-c", contract.currentDecider.command], { input: JSON.stringify(item), encoding: "utf8" });
+	// Only decision inputs: reference or fallbackAnswer on stdin would let the decider, and the model's fallback, read the answer.
+	const decisionInput = JSON.stringify({ id: item.id, input: item.input });
+	const run = spawnSync("sh", ["-c", contract.currentDecider.command], { input: decisionInput, encoding: "utf8" });
 	const ms = performance.now() - started;
 	if (run.status !== 0) throw new Error(`current decider failed: ${run.stderr}`);
 	const output = JSON.parse(run.stdout) as { label?: string; usd?: number };
@@ -99,7 +101,8 @@ export function scoreBench(contract: Pick<BenchContract, "class" | "budgetMs">, 
 		return { accuracy: correct / total, fallbackRate: runs.filter((r) => r.fallback).length / total, p95Ms: percentile95(runs.map((r) => r.ms)) ?? 0, usdPerDecision: usd / total, runs: runs.length };
 	};
 	const table = { model: { pilot: score("model", "pilot"), holdout: score("model", "holdout") }, current: { pilot: score("current", "pilot"), holdout: score("current", "holdout") } };
-	return { table, checks: passChecks(contract, table.model.holdout, table.current.holdout) };
+	const holdoutReferenceSources = [...new Set(cases.filter((item) => item.split === "holdout").map((item) => item.referenceSource))];
+	return { table, holdoutReferenceSources, checks: passChecks(contract, table.model.holdout, table.current.holdout) };
 }
 
 // Every case × decider × rep exactly once: a missing, duplicate or unknown cell makes the score meaningless.

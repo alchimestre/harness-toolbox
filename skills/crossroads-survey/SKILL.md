@@ -97,13 +97,13 @@ bun "$toolbox/src/crossroads/survey.ts" pilot <run-dir> <id> samples.jsonl
 
 # Benchmark
 
-Only after a pilot pass. Write `cases.jsonl` with the 30 pilot samples (`"split": "pilot"`) and 70 fresh cases (`"split": "holdout"`). Every holdout `reference` comes from the user labelling blind, without seeing either decider's answer, with `"referenceSource": "blind human"`. Then:
+Only after a pilot pass. Write `cases.jsonl` with the 30 pilot samples (`"split": "pilot"`) and 70 fresh cases (`"split": "holdout"`). Every holdout `reference` is labelled blind, without seeing either decider's answer: by the user (`"referenceSource": "blind human"`), or, when the user asks, by two agents from different model families given only the label definitions (`"referenceSource": "blind agent"`). Where the two families split, the user labels the case if the model also falls back; otherwise replace the case. The current decider must not be one of those agents; `score` names the holdout reference sources. Then:
 
 ```sh
 bun "$toolbox/src/crossroads/survey.ts" bench <run-dir> <id> cases.jsonl
 ```
 
-- Set `currentDecider.command` in `bench/<id>/contract.json`: it reads one case as JSON on stdin and prints `{"label", "usd"}`.
+- Set `currentDecider.command` in `bench/<id>/contract.json`: it reads `{"id", "input"}` as JSON on stdin and prints `{"label", "usd"}`. It never sees the reference.
 - Hand `bench/<id>/` to the `bench-runner` agent: matrix `model` and `current` × every case × reps 1–5, one `run <decider> <case-id> <rep>` per cell, its JSON line appended to a results file, scored by `score <results.jsonl>`. `score` rejects a missing, duplicate or unknown cell.
 
 | Pass bar (holdout only) | Current decider is an LLM | Current decider is code |
