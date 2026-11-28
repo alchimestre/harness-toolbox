@@ -1,7 +1,7 @@
 // Wires each extension against a fake harness API. Run: bun test/wiring.ts
 
 import { mock } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -274,6 +274,11 @@ const ctx = { cwd: "/tmp/scope", agent: { kind: "main" }, hasUI: false };
 	const realCall = (await realHandlers["tool_call"]({ toolName: "task", input: { context: realContext, tasks: [{ agent: "git-chores", task: realAssignment }] } }, { cwd: repo })) as { block?: boolean } | undefined;
 	check(realCall?.block, "a real parent assignment with ignore-file names and do-not-commit guards takes the fast path");
 	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `../outside.log`.")) === undefined, "a path outside the repo spawns the agent");
+	const READ_ONLY = 0o444;
+	const WRITABLE = 0o644;
+	chmodSync(join(repo, ".gitignore"), READ_ONLY);
+	check((await callTask(fakeJev("gitignore", CONFIDENT), "Ignore `locked.log` for everyone.")) === undefined, "a failed write spawns the agent instead of failing the hook");
+	chmodSync(join(repo, ".gitignore"), WRITABLE);
 
 	const before = readFileSync(join(repo, ".gitignore"), "utf8");
 	asked = 0;

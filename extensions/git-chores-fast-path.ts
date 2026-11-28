@@ -41,7 +41,7 @@ export default function gitChoresFastPath(pi: ExtensionAPI, backend?: DecisionBa
 		if (!chore) return;
 		const label = await askLabel(backend, chore);
 		if (!label || (label === "untrack") !== chore.tracked) return;
-		const reason = applyChore(ctx.cwd, chore.path, label);
+		const reason = tryApplyChore(ctx.cwd, chore.path, label);
 		return reason ? { block: true, reason } : undefined;
 	});
 	pi.setLabel("git-chores fast path");
@@ -72,6 +72,14 @@ async function askLabel(backend: DecisionBackend | undefined, chore: Chore): Pro
 		const asked = await (backend ?? jevBackend()).ask({ input: state }, { decision: QUESTION }, JEV_TIMEOUT_MS);
 		const answer = asked.answers.decision;
 		return isFallback(QUESTION, answer) ? undefined : decidedLabel(QUESTION, answer);
+	} catch {
+		return undefined;
+	}
+}
+
+function tryApplyChore(cwd: string, path: string, label: string): string | undefined {
+	try {
+		return applyChore(cwd, path, label);
 	} catch {
 		return undefined;
 	}
